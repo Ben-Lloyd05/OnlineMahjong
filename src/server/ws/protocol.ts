@@ -41,6 +41,27 @@ export type ChatMessageMsg = BaseMsg & {
   text: string;
 };
 
+export type CreateTableMsg = BaseMsg & {
+  type: 'create_table';
+  // Optional client-provided seed to participate in deterministic RNG
+  clientSeed?: string;
+};
+
+export type JoinTableMsg = BaseMsg & {
+  type: 'join_table';
+  inviteCode: string;
+  // Optional client-provided seed to participate in deterministic RNG
+  clientSeed?: string;
+};
+
+export type LeaveTableMsg = BaseMsg & {
+  type: 'leave_table';
+};
+
+export type GetMyTablesMsg = BaseMsg & {
+  type: 'get_my_tables';
+};
+
 export type PresenceUpdateMsg = BaseMsg & {
   type: 'presence_update';
   status: 'online' | 'away' | 'offline';
@@ -52,6 +73,10 @@ export type ClientToServer =
   | PlayerActionMsg
   | ReplayRequestMsg
   | ChatMessageMsg
+  | CreateTableMsg
+  | JoinTableMsg
+  | LeaveTableMsg
+  | GetMyTablesMsg
   | PresenceUpdateMsg;
 
 // Server -> Client
@@ -80,15 +105,44 @@ export type ReplayChunkMsg = BaseMsg & {
   nextIndex?: number;
 };
 
+export type TableCreatedMsg = BaseMsg & {
+  type: 'table_created';
+  tableId: string;
+  inviteCode: string;
+  serverCommit?: string; // fairness commitment
+};
+
+export type TableJoinedMsg = BaseMsg & {
+  type: 'table_joined';
+  tableId: string;
+  inviteCode: string;
+  players: number;
+  serverCommit?: string; // fairness commitment
+};
+
+export type TableLeftMsg = BaseMsg & {
+  type: 'table_left';
+  tableId: string;
+};
+
+export type MyTablesMsg = BaseMsg & {
+  type: 'my_tables';
+  tables: { tableId: string; inviteCode: string; isCreator: boolean }[];
+};
+
 export type LobbyUpdateMsg = BaseMsg & {
   type: 'lobby_update';
-  tables: { id: string; players: number; started: boolean }[];
+  tables: { id: string; inviteCode: string; players: number; started: boolean }[];
 };
 
 export type ServerToClient =
   | GameStateUpdateMsg
   | ActionResultMsg
   | ReplayChunkMsg
+  | TableCreatedMsg
+  | TableJoinedMsg
+  | TableLeftMsg
+  | MyTablesMsg
   | LobbyUpdateMsg
   | PresenceUpdateMsg
   | ChatMessageMsg;

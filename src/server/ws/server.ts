@@ -6,11 +6,21 @@ import { createGame, applyMove, getGameState } from '../../engine';
 import { load2024RuleCard } from '../../rulecard-parser';
 import { commitServerSeed } from '../../fairness';
 
-type Client = { ws: any; tableId?: string; authed?: boolean; playerId?: 0 | 1 | 2 | 3 };
+type Client = { 
+  ws: any; 
+  tableId?: string; 
+  authed?: boolean; 
+  playerId?: 0 | 1 | 2 | 3; 
+  isCreator?: boolean;
+  tableHistory?: Set<string>; // Track which tables this client has been in
+};
 
 type TableEntry = {
   state: any;
   clients: Set<Client>;
+  inviteCode: string;
+  createdAt: number;
+  creatorLeft?: boolean; // Track if creator left but table should persist
   seeds: {
     serverSecret: string; // per-table random secret
     clientSeed: string;   // client-provided or server-generated
@@ -19,6 +29,21 @@ type TableEntry = {
 };
 
 const tables = new Map<string, TableEntry>();
+const inviteCodeToTableId = new Map<string, string>();
+
+function generateInviteCode(): string {
+  // Generate a 6-character alphanumeric invite code
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  let code = '';
+  for (let i = 0; i < 6; i++) {
+    code += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  // Ensure uniqueness
+  if (inviteCodeToTableId.has(code)) {
+    return generateInviteCode();
+  }
+  return code;
+}
 
 function broadcast(tableId: string, msg: ServerToClient) {
   const table = tables.get(tableId);
@@ -37,6 +62,34 @@ export function startServer(port = 8080) {
   wss.on('connection', (ws: any) => {
     const client: Client = { ws };
 
+    ws.on('close', () => {
+      // Clean up when client disconnects
+      if (client.tableId) {
+        const table = tables.get(client.tableId);
+        if (table) {
+          table.clients.delete(client);
+          
+          // If creator disconnects, mark table but keep it alive for rejoining
+          if (client.isCreator && table.clients.size === 0) {
+            table.creatorLeft = true;
+            // Set a timeout to clean up after 10 minutes if no one rejoins
+            setTimeout(() => {
+              const currentTable = tables.get(client.tableId!);
+              if (currentTable && currentTable.clients.size === 0) {
+                tables.delete(client.tableId!);
+                inviteCodeToTableId.delete(currentTable.inviteCode);
+              }
+            }, 10 * 60 * 1000); // 10 minutes
+          }
+          // If non-creator disconnects and table becomes empty, clean up immediately
+          else if (!client.isCreator && table.clients.size === 0) {
+            tables.delete(client.tableId);
+            inviteCodeToTableId.delete(table.inviteCode);
+          }
+        }
+      }
+    });
+
     ws.on('message', (data: Buffer) => {
       const msg: ClientToServer = JSON.parse(data.toString());
       if (!msg.traceId || !msg.ts) return;
@@ -46,29 +99,225 @@ export function startServer(port = 8080) {
         return;
       }
 
-      if (msg.type === 'subscribe') {
-        const tableId = msg.tableId;
-        client.tableId = tableId;
-        client.playerId = ((Math.random() * 4) | 0) as 0 | 1 | 2 | 3;
-        let entry = tables.get(tableId);
-        if (!entry) {
-          // Generate per-table seeds for deterministic fairness
-          const serverSecret = randomBytes(32).toString('hex');
-          const clientSeed = (msg as any).clientSeed || randomUUID();
-          const serverCommit = commitServerSeed(serverSecret);
+      if (msg.type === 'create_table') {
+        const tableId = randomUUID();
+        const inviteCode = generateInviteCode();
+        
+        // Generate per-table seeds for deterministic fairness
+        const serverSecret = randomBytes(32).toString('hex');
+        const clientSeed = (msg as any).clientSeed || randomUUID();
+        const serverCommit = commitServerSeed(serverSecret);
 
-          entry = {
-            state: createGame(clientSeed, serverSecret, 0),
-            clients: new Set(),
-            seeds: { serverSecret, clientSeed, serverCommit }
-          };
-          tables.set(tableId, entry);
-        }
+        const entry: TableEntry = {
+          state: createGame(clientSeed, serverSecret, 0),
+          clients: new Set(),
+          inviteCode,
+          createdAt: Date.now(),
+          seeds: { serverSecret, clientSeed, serverCommit }
+        };
+        
+        tables.set(tableId, entry);
+        inviteCodeToTableId.set(inviteCode, tableId);
+        
+        client.tableId = tableId;
+        client.playerId = 0;
+        client.isCreator = true;
+        if (!client.tableHistory) client.tableHistory = new Set();
+        client.tableHistory.add(tableId);
         entry.clients.add(client);
 
+        const response: ServerToClient = {
+          type: 'table_created',
+          traceId: mkTrace(),
+          ts: nowIso(),
+          tableId,
+          inviteCode
+        };
+        ws.send(JSON.stringify(response));
+        
+        // Automatically send game state after creating
         const snapshot = getGameState(entry.state);
-  // Optionally, include fairness metadata in a separate message in future (e.g., serverCommit)
-  const update = { type: 'game_state_update', traceId: mkTrace(), ts: nowIso(), tableId, full: snapshot } as ServerToClient;
+        const gameUpdate: ServerToClient = {
+          type: 'game_state_update',
+          traceId: mkTrace(),
+          ts: nowIso(),
+          tableId,
+          full: snapshot
+        };
+        ws.send(JSON.stringify(gameUpdate));
+        return;
+      }
+
+      if (msg.type === 'join_table') {
+        const tableId = inviteCodeToTableId.get(msg.inviteCode);
+        if (!tableId) {
+          const errorResponse: ServerToClient = {
+            type: 'action_result',
+            traceId: mkTrace(),
+            ts: nowIso(),
+            tableId: '',
+            ok: false,
+            error: { code: 'invalid_invite_code', message: 'Invalid invite code' }
+          };
+          ws.send(JSON.stringify(errorResponse));
+          return;
+        }
+
+        const entry = tables.get(tableId);
+        if (!entry) {
+          const errorResponse: ServerToClient = {
+            type: 'action_result',
+            traceId: mkTrace(),
+            ts: nowIso(),
+            tableId: '',
+            ok: false,
+            error: { code: 'table_not_found', message: 'Table no longer exists' }
+          };
+          ws.send(JSON.stringify(errorResponse));
+          return;
+        }
+
+        if (entry.clients.size >= 4) {
+          const errorResponse: ServerToClient = {
+            type: 'action_result',
+            traceId: mkTrace(),
+            ts: nowIso(),
+            tableId,
+            ok: false,
+            error: { code: 'table_full', message: 'Table is full (4 players maximum)' }
+          };
+          ws.send(JSON.stringify(errorResponse));
+          return;
+        }
+
+        client.tableId = tableId;
+        if (!client.tableHistory) client.tableHistory = new Set();
+        client.tableHistory.add(tableId);
+        
+        // If this is the creator rejoining their empty table, restore their creator status
+        if (entry.creatorLeft && entry.clients.size === 0) {
+          client.isCreator = true;
+          client.playerId = 0;
+          entry.creatorLeft = false;
+        } else {
+          client.playerId = entry.clients.size as (0 | 1 | 2 | 3);
+        }
+        
+        entry.clients.add(client);
+
+        const response: ServerToClient = {
+          type: 'table_joined',
+          traceId: mkTrace(),
+          ts: nowIso(),
+          tableId,
+          inviteCode: entry.inviteCode,
+          players: entry.clients.size
+        };
+        ws.send(JSON.stringify(response));
+        
+        // Automatically send game state after joining
+        const snapshot = getGameState(entry.state);
+        const gameUpdate: ServerToClient = {
+          type: 'game_state_update',
+          traceId: mkTrace(),
+          ts: nowIso(),
+          tableId,
+          full: snapshot
+        };
+        ws.send(JSON.stringify(gameUpdate));
+        return;
+      }
+
+      if (msg.type === 'get_my_tables') {
+        const myTables: { tableId: string; inviteCode: string; isCreator: boolean }[] = [];
+        
+        if (client.tableHistory) {
+          for (const tableId of client.tableHistory) {
+            const table = tables.get(tableId);
+            if (table) {
+              // Check if this client was the creator by checking if any client in this table has this connection
+              // Since we don't persist this across connections, we'll use a simpler approach:
+              // Just report if the table still exists
+              myTables.push({
+                tableId,
+                inviteCode: table.inviteCode,
+                isCreator: false // We can't reliably track this across reconnections
+              });
+            }
+          }
+        }
+        
+        const response: ServerToClient = {
+          type: 'my_tables',
+          traceId: mkTrace(),
+          ts: nowIso(),
+          tables: myTables
+        };
+        ws.send(JSON.stringify(response));
+        return;
+      }
+
+      if (msg.type === 'leave_table') {
+        if (!client.tableId) return;
+        
+        const table = tables.get(client.tableId);
+        if (table) {
+          table.clients.delete(client);
+          
+          // If creator is leaving, mark table but keep it alive for rejoining
+          if (client.isCreator && table.clients.size === 0) {
+            table.creatorLeft = true;
+            // Set a timeout to clean up after 10 minutes if no one rejoins
+            setTimeout(() => {
+              const currentTable = tables.get(client.tableId!);
+              if (currentTable && currentTable.clients.size === 0) {
+                tables.delete(client.tableId!);
+                inviteCodeToTableId.delete(currentTable.inviteCode);
+              }
+            }, 10 * 60 * 1000); // 10 minutes
+          }
+          // If non-creator leaves and table becomes empty, clean up immediately
+          else if (!client.isCreator && table.clients.size === 0) {
+            tables.delete(client.tableId);
+            inviteCodeToTableId.delete(table.inviteCode);
+          }
+        }
+        
+        const response: ServerToClient = {
+          type: 'table_left',
+          traceId: mkTrace(),
+          ts: nowIso(),
+          tableId: client.tableId
+        };
+        
+        client.tableId = undefined;
+        client.playerId = undefined;
+        client.isCreator = undefined;
+        
+        ws.send(JSON.stringify(response));
+        return;
+      }
+
+      if (msg.type === 'subscribe') {
+        if (!client.tableId) {
+          const errorResponse: ServerToClient = {
+            type: 'action_result',
+            traceId: mkTrace(),
+            ts: nowIso(),
+            tableId: '',
+            ok: false,
+            error: { code: 'table_not_found', message: 'Table not found. Use create_table or join_table instead.' }
+          };
+          ws.send(JSON.stringify(errorResponse));
+          return;
+        }
+
+        const entry = tables.get(client.tableId);
+        if (!entry) return;
+
+        const snapshot = getGameState(entry.state);
+        // Optionally, include fairness metadata in a separate message in future (e.g., serverCommit)
+        const update = { type: 'game_state_update', traceId: mkTrace(), ts: nowIso(), tableId: client.tableId, full: snapshot } as ServerToClient;
         ws.send(JSON.stringify(update));
         return;
       }
