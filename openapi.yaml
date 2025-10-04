@@ -1,0 +1,79 @@
+openapi: 3.0.3
+info:
+  title: Mahjong TS API
+  version: 0.1.0
+servers:
+  - url: http://localhost:3000
+paths:
+  /rule_cards:
+    get:
+      summary: List available rule cards
+      responses:
+        '200': { description: OK }
+    post:
+      summary: Upload a custom rule card
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RuleCardDefinition'
+      responses:
+        '200': { description: OK }
+        '400': { description: Invalid rule card }
+  /games:
+    post:
+      summary: Create a game
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                year: { type: integer, enum: [2024, 2025] }
+      responses:
+        '200': { description: Game created }
+  /games/{id}/join:
+    post:
+      summary: Join a game
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: OK }
+  /games/{id}/replay:
+    get:
+      summary: Get replay logs
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: OK }
+components:
+  schemas:
+    PatternDefinition:
+      type: object
+      properties:
+        name: { type: string }
+        points: { type: number }
+        pattern: { type: string }
+        suits: { type: string }
+        tiles: { type: string }
+        maxJokers: { type: number }
+      required: [name, points, pattern]
+    RuleCardDefinition:
+      type: object
+      properties:
+        name: { type: string }
+        year: { type: integer }
+        patterns:
+          type: array
+          items: { $ref: '#/components/schemas/PatternDefinition' }
+      required: [name, year, patterns]
+
+
