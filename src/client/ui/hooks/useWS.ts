@@ -34,52 +34,16 @@ export function useWS(url: string, tableId: string, opts?: { clientSeed?: string
     wsRef.current = ws;
     
     ws.onopen = () => {
+      console.log('[useWS] WebSocket connected');
       const ts = new Date().toISOString();
       const tid = cryptoRandomId();
       ws.send(JSON.stringify({ type: 'auth', traceId: tid(), ts, token: 'demo' } as ClientToServer));
-      
-      // Auto-rejoin if we were in a table before reload
-      // Find the most recent join/create event that happened after any leave event
-      let lastCreateIndex = -1;
-      let lastJoinIndex = -1;
-      let lastLeaveIndex = -1;
-      
-      for (let i = messages.length - 1; i >= 0; i--) {
-        if (lastCreateIndex === -1 && messages[i].type === 'table_created') lastCreateIndex = i;
-        if (lastJoinIndex === -1 && messages[i].type === 'table_joined') lastJoinIndex = i;
-        if (lastLeaveIndex === -1 && messages[i].type === 'table_left') lastLeaveIndex = i;
-        if (lastCreateIndex !== -1 && lastJoinIndex !== -1 && lastLeaveIndex !== -1) break;
-      }
-      
-      const lastJoin = Math.max(lastCreateIndex, lastJoinIndex);
-      const shouldRejoin = lastJoin >= 0 && (lastLeaveIndex < 0 || lastJoin > lastLeaveIndex);
-      
-      if (shouldRejoin) {
-        // Rejoin the table automatically
-        const tableMsg = lastJoin === lastCreateIndex ? messages[lastCreateIndex] as any : messages[lastJoinIndex] as any;
-        const inviteCode = tableMsg.inviteCode;
-        
-        if (inviteCode) {
-          const clientSeed = globalThis.crypto && 'randomUUID' in globalThis.crypto 
-            ? (globalThis.crypto as any).randomUUID() 
-            : Math.random().toString(36).slice(2);
-          
-          setTimeout(() => {
-            ws.send(JSON.stringify({ 
-              type: 'join_table', 
-              traceId: tid(), 
-              ts: new Date().toISOString(), 
-              inviteCode,
-              clientSeed
-            } as ClientToServer));
-          }, 100); // Small delay to ensure auth completes first
-        }
-      }
     };
     
     ws.onmessage = (ev: MessageEvent) => {
       try {
         const msg = JSON.parse(ev.data);
+        console.log('[useWS] Received message:', msg.type, msg);
         setMessages((prev: ServerToClient[]) => [...prev, msg]);
         
         // Persist table information to localStorage when we create or join
@@ -93,7 +57,6 @@ export function useWS(url: string, tableId: string, opts?: { clientSeed?: string
               isCreator: msg.type === 'table_created',
               lastSeen: Date.now()
             };
-            console.log('[useWS] Saving table to localStorage:', tableInfo);
             // Add or update
             const existing = myTables.findIndex((t: any) => t.inviteCode === msg.inviteCode);
             if (existing >= 0) {
@@ -102,7 +65,6 @@ export function useWS(url: string, tableId: string, opts?: { clientSeed?: string
               myTables.push(tableInfo);
             }
             localStorage.setItem(TABLES_STORAGE_KEY, JSON.stringify(myTables));
-            console.log('[useWS] Saved tables:', myTables);
           } catch (e) {
             console.error('Failed to persist table info:', e);
           }
@@ -130,18 +92,30 @@ export function useWS(url: string, tableId: string, opts?: { clientSeed?: string
       }
     };
     
-    return () => { ws.close(); };
+    ws.onclose = () => {
+      console.log('[useWS] WebSocket closed');
+    };
+    
+    ws.onerror = (error) => {
+      console.error('[useWS] WebSocket error:', error);
+    };
+    
+    return () => {
+      console.log('[useWS] Cleaning up WebSocket connection');
+      ws.close();
+    };
   }, [url, tableId]);
 
   const send = (msg: ClientToServer) => {
     if (!wsRef.current) {
-      console.error('WebSocket not initialized');
+      console.error('[useWS] WebSocket not initialized');
       return;
     }
     if (wsRef.current.readyState !== WebSocket.OPEN) {
-      console.error('WebSocket not open, readyState:', wsRef.current.readyState);
+      console.error('[useWS] WebSocket not open, readyState:', wsRef.current.readyState);
       return;
     }
+    console.log('[useWS] Sending message:', msg.type, msg);
     wsRef.current.send(JSON.stringify(msg));
   };
 

@@ -53,6 +53,28 @@ function broadcast(tableId: string, msg: ServerToClient) {
   }
 }
 
+function broadcastPlayerCount(tableId: string) {
+  const table = tables.get(tableId);
+  if (!table) {
+    console.log(`[broadcastPlayerCount] Table ${tableId.slice(0, 8)} not found`);
+    return;
+  }
+  
+  const playerCount = table.clients.size;
+  const msg: ServerToClient = {
+    type: 'player_count_update',
+    traceId: mkTrace(),
+    ts: nowIso(),
+    tableId,
+    players: playerCount,
+    ready: playerCount === 4
+  };
+  
+  console.log(`[broadcastPlayerCount] Broadcasting to ${table.clients.size} clients: ${playerCount}/4`);
+  broadcast(tableId, msg);
+  console.log(`[Table ${tableId.slice(0, 8)}] Player count: ${playerCount}/4 ${playerCount === 4 ? '(READY)' : ''}`);
+}
+
 function mkTrace() { return randomUUID(); }
 
 export function startServer(port = 8080) {
@@ -63,26 +85,38 @@ export function startServer(port = 8080) {
     const client: Client = { ws };
 
     ws.on('close', () => {
+      console.log(`[Server] WebSocket closed for client, tableId: ${client.tableId || 'none'}, isCreator: ${client.isCreator}`);
       // Clean up when client disconnects
       if (client.tableId) {
         const table = tables.get(client.tableId);
         if (table) {
+          const tableIdForBroadcast = client.tableId;
+          const clientsBeforeRemove = table.clients.size;
           table.clients.delete(client);
+          console.log(`[Server] Removed client from table ${tableIdForBroadcast.slice(0, 8)}, was ${clientsBeforeRemove} players, now ${table.clients.size} players`);
+          
+          // Broadcast updated player count to remaining players
+          if (table.clients.size > 0) {
+            broadcastPlayerCount(tableIdForBroadcast);
+          }
           
           // If creator disconnects, mark table but keep it alive for rejoining
           if (client.isCreator && table.clients.size === 0) {
             table.creatorLeft = true;
+            console.log(`[Table ${tableIdForBroadcast.slice(0, 8)}] Creator disconnected, table empty but kept alive`);
             // Set a timeout to clean up after 10 minutes if no one rejoins
             setTimeout(() => {
-              const currentTable = tables.get(client.tableId!);
+              const currentTable = tables.get(tableIdForBroadcast);
               if (currentTable && currentTable.clients.size === 0) {
-                tables.delete(client.tableId!);
+                tables.delete(tableIdForBroadcast);
                 inviteCodeToTableId.delete(currentTable.inviteCode);
+                console.log(`[Table ${tableIdForBroadcast.slice(0, 8)}] Cleaned up after timeout`);
               }
             }, 10 * 60 * 1000); // 10 minutes
           }
           // If non-creator disconnects and table becomes empty, clean up immediately
           else if (!client.isCreator && table.clients.size === 0) {
+            console.log(`[Table ${tableIdForBroadcast.slice(0, 8)}] All players left, cleaning up`);
             tables.delete(client.tableId);
             inviteCodeToTableId.delete(table.inviteCode);
           }
@@ -134,6 +168,9 @@ export function startServer(port = 8080) {
           inviteCode
         };
         ws.send(JSON.stringify(response));
+        
+        // Broadcast player count to all clients in the table
+        broadcastPlayerCount(tableId);
         
         // Automatically send game state after creating
         const snapshot = getGameState(entry.state);
@@ -204,6 +241,7 @@ export function startServer(port = 8080) {
         }
         
         entry.clients.add(client);
+        console.log(`[Server] Player joined table ${tableId.slice(0, 8)}, now ${entry.clients.size} players`);
 
         const response: ServerToClient = {
           type: 'table_joined',
@@ -214,6 +252,10 @@ export function startServer(port = 8080) {
           players: entry.clients.size
         };
         ws.send(JSON.stringify(response));
+        
+        // Broadcast player count to all clients in the table
+        console.log(`[Server] Broadcasting player count to ${entry.clients.size} clients`);
+        broadcastPlayerCount(tableId);
         
         // Automatically send game state after joining
         const snapshot = getGameState(entry.state);
@@ -260,24 +302,33 @@ export function startServer(port = 8080) {
       if (msg.type === 'leave_table') {
         if (!client.tableId) return;
         
+        const tableIdForBroadcast = client.tableId;
         const table = tables.get(client.tableId);
         if (table) {
           table.clients.delete(client);
           
+          // Broadcast updated player count to remaining players
+          if (table.clients.size > 0) {
+            broadcastPlayerCount(tableIdForBroadcast);
+          }
+          
           // If creator is leaving, mark table but keep it alive for rejoining
           if (client.isCreator && table.clients.size === 0) {
             table.creatorLeft = true;
+            console.log(`[Table ${tableIdForBroadcast.slice(0, 8)}] Creator left, table empty but kept alive`);
             // Set a timeout to clean up after 10 minutes if no one rejoins
             setTimeout(() => {
-              const currentTable = tables.get(client.tableId!);
+              const currentTable = tables.get(tableIdForBroadcast);
               if (currentTable && currentTable.clients.size === 0) {
-                tables.delete(client.tableId!);
+                tables.delete(tableIdForBroadcast);
                 inviteCodeToTableId.delete(currentTable.inviteCode);
+                console.log(`[Table ${tableIdForBroadcast.slice(0, 8)}] Cleaned up after timeout`);
               }
             }, 10 * 60 * 1000); // 10 minutes
           }
           // If non-creator leaves and table becomes empty, clean up immediately
           else if (!client.isCreator && table.clients.size === 0) {
+            console.log(`[Table ${tableIdForBroadcast.slice(0, 8)}] All players left, cleaning up`);
             tables.delete(client.tableId);
             inviteCodeToTableId.delete(table.inviteCode);
           }

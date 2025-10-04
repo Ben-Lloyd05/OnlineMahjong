@@ -6,16 +6,19 @@ Use these project-specific rules to move fast. Prefer existing modules/types; do
 - Server-authoritative American Mahjong over WebSockets.
 - WS server: `src/server/ws/server.ts` using message types in `src/server/ws/protocol.ts`.
 - Game engine is server-only: `src/engine.ts` with helpers (`src/validation.ts`, `src/charleston.ts`, `src/wall.ts`, `src/tiles.ts`, `src/rng.ts`, `src/types.ts`).
-- Client: React + Vite. WS hook at `src/client/ui/hooks/useWS.ts`, entry `src/client/main.tsx`.
+- Client: React + Vite + React Router. WS hook at `src/client/ui/hooks/useWS.ts`, entry `src/client/main.tsx`.
+- Routing: `/` (lobby), `/table/:inviteCode` (game table). See `src/client/pages/`.
 - Provable fairness/audit scaffold: `src/fairness.ts`, storage adapter (stub) `src/audit-storage.ts`, REST router `src/fairness-api.ts`.
 
 ## Dev workflows
-- Start WS server (builds TS then runs): `npm run start:ws` (PORT defaults 8080).
-- Frontend dev server: `npm run dev` (Vite on 5173). Playwright spins both via `playwright.config.ts`.
+- Start both servers: `npm run dev:all` (concurrently runs WS on 8080 + Vite on 5173).
+- Start WS server only: `npm run start:ws` (builds TS then runs, PORT defaults 8080).
+- Frontend dev server only: `npm run dev` (Vite on 5173).
 - Tests: `npm test` (Jest via ts-jest; `tests/**/*.test.ts`). E2E under `tests/e2e` with Playwright.
 
 ## WebSocket protocol (use these shapes)
-- Client handshake: send `{type:'auth'}` then `{type:'subscribe', tableId}` (see `useWS.ts`).
+- Client handshake: send `{type:'auth'}` on connection (see `useWS.ts`).
+- Lobby actions: `{type:'create_table', clientSeed}` → `{type:'table_created', inviteCode, tableId}`; `{type:'join_table', inviteCode, clientSeed}` → `{type:'table_joined', inviteCode, tableId}`; `{type:'leave_table'}` → `{type:'table_left', tableId}`.
 - Server snapshot then deltas: `{type:'game_state_update', full: GameState}` then `{ delta: { logsAppend: [Move] } }`.
 - Actions: client sends `{type:'player_action', action: Move}`; server replies with `{type:'action_result', ok, error?, applied?}` and broadcasts a `game_state_update` on success.
 - Always include `traceId` (UUID) and ISO timestamp (`nowIso()` helper).
@@ -41,8 +44,17 @@ Use these project-specific rules to move fast. Prefer existing modules/types; do
 - Shuffle/deal changes: only via `src/wall.ts`/`src/rng.ts` to keep reproducibility.
 - Fairness: prefer primitives in `src/fairness.ts`; persist via `AuditStorage` when DB is connected.
 
+## Lobby system
+- Invite codes: 6-character alphanumeric (generated server-side), used to join tables.
+- Table persistence: Client tracks tables in localStorage (`mahjong_my_tables`), user can manually rejoin or remove stale entries.
+- Message history: Persisted in localStorage (`mahjong_table_history`) for session continuity.
+- Error dismissal: Tracked in localStorage (`mahjong_dismissed_errors`) to persist across page reloads.
+- No auto-rejoin: Users must manually click "Connect" to rejoin tables from lobby.
+- Navigation: Auto-navigate to `/table/:inviteCode` on join/create; back to `/` on leave (only when messages change, not on manual URL navigation).
+
 ## Pointers
 - WS server/protocol: `src/server/ws/server.ts`, `src/server/ws/protocol.ts`
 - Engine/rules: `src/engine.ts`, `src/validation.ts`, `src/charleston.ts`, `src/wall.ts`, `src/tiles.ts`, `src/rng.ts`, `src/types.ts`
 - Fairness/audit: `src/fairness.ts`, `src/audit-storage.ts`, `src/fairness-api.ts`
-- Client: `src/client/main.tsx`, `src/client/ui/hooks/useWS.ts`
+- Client: `src/client/main.tsx`, `src/client/ui/hooks/useWS.ts`, `src/client/pages/LobbyPage.tsx`, `src/client/pages/TablePage.tsx`
+- Lobby UI: `src/client/ui/components/LobbyView.tsx`

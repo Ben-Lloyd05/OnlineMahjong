@@ -135,6 +135,13 @@ export type LobbyUpdateMsg = BaseMsg & {
   tables: { id: string; inviteCode: string; players: number; started: boolean }[];
 };
 
+export type PlayerCountUpdateMsg = BaseMsg & {
+  type: 'player_count_update';
+  tableId: string;
+  players: number;
+  ready: boolean; // true if 4 players present
+};
+
 export type ServerToClient =
   | GameStateUpdateMsg
   | ActionResultMsg
@@ -144,6 +151,7 @@ export type ServerToClient =
   | TableLeftMsg
   | MyTablesMsg
   | LobbyUpdateMsg
+  | PlayerCountUpdateMsg
   | PresenceUpdateMsg
   | ChatMessageMsg;
 

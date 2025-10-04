@@ -9,36 +9,35 @@ import { useWS } from './ui/hooks/useWS';
 function App() {
   const { messages, createTable, joinTable, leaveTable, clearHistory } = useWS('ws://localhost:8080', '');
   const navigate = useNavigate();
+  const prevMessagesLengthRef = React.useRef(messages.length);
 
   // Auto-navigate to table when join/create happens, and back to lobby on leave
   useEffect(() => {
-    let tableCreatedIndex = -1;
-    let tableJoinedIndex = -1;
-    let tableLeftIndex = -1;
-    
-    for (let i = messages.length - 1; i >= 0; i--) {
-      if (tableCreatedIndex === -1 && messages[i].type === 'table_created') tableCreatedIndex = i;
-      if (tableJoinedIndex === -1 && messages[i].type === 'table_joined') tableJoinedIndex = i;
-      if (tableLeftIndex === -1 && messages[i].type === 'table_left') tableLeftIndex = i;
-      if (tableCreatedIndex !== -1 && tableJoinedIndex !== -1 && tableLeftIndex !== -1) break;
+    // Only check navigation if we got a NEW message
+    if (messages.length === prevMessagesLengthRef.current) {
+      return;
     }
+    prevMessagesLengthRef.current = messages.length;
     
-    const lastJoinIndex = Math.max(tableCreatedIndex, tableJoinedIndex);
-    const inTable = lastJoinIndex >= 0 && (tableLeftIndex < 0 || lastJoinIndex > tableLeftIndex);
+    // Check the most recent message to see if it's a navigation trigger
+    if (messages.length === 0) return;
     
-    // Get the invite code for the current table
-    let inviteCode = '';
-    if (inTable) {
-      const currentTableMessage = lastJoinIndex === tableCreatedIndex 
-        ? messages[tableCreatedIndex] as any 
-        : messages[tableJoinedIndex] as any;
-      inviteCode = currentTableMessage?.inviteCode || '';
+    const lastMessage = messages[messages.length - 1] as any;
+    const currentPath = window.location.pathname;
+    
+    console.log('[App] Navigation check - lastMessage:', lastMessage.type, 'currentPath:', currentPath);
+    
+    // If the last message was joining/creating a table, navigate to it
+    if ((lastMessage.type === 'table_created' || lastMessage.type === 'table_joined') && currentPath === '/') {
+      const inviteCode = lastMessage.inviteCode;
+      console.log('[App] Navigating to table:', inviteCode);
+      if (inviteCode) {
+        navigate(`/table/${inviteCode}`);
+      }
     }
-    
-    // Navigate based on state
-    if (inTable && !window.location.pathname.startsWith('/table/')) {
-      navigate(`/table/${inviteCode}`);
-    } else if (!inTable && window.location.pathname.startsWith('/table/')) {
+    // If the last message was leaving a table, navigate back to lobby
+    else if (lastMessage.type === 'table_left' && currentPath.startsWith('/table/')) {
+      console.log('[App] Navigating back to lobby');
       navigate('/');
     }
   }, [messages, navigate]);

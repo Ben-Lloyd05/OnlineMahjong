@@ -24,6 +24,19 @@ export default function TablePage({ messages, onLeaveTable }: TablePageProps) {
     return null;
   }, [messages]);
 
+  // Get the most recent player count update
+  const playerCountInfo = useMemo(() => {
+    console.log('[TablePage] Recalculating player count from', messages.length, 'messages');
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if ((messages[i] as any).type === 'player_count_update') {
+        console.log('[TablePage] Found player_count_update:', messages[i]);
+        return messages[i] as any;
+      }
+    }
+    console.log('[TablePage] No player_count_update found, using default');
+    return { players: 1, ready: false };
+  }, [messages]);
+
   // Use invite code from URL
   const currentInviteCode = inviteCode || 'Unknown';
 
@@ -54,9 +67,21 @@ export default function TablePage({ messages, onLeaveTable }: TablePageProps) {
           <div className="opacity-70">
             Invite Code: <span className="font-mono font-bold">{currentInviteCode}</span>
           </div>
-          <div className="opacity-70">Connected: {Boolean(gameSnapshot)?.toString()}</div>
+          <div className={`font-semibold px-3 py-1 rounded-lg ${
+            playerCountInfo.ready 
+              ? 'bg-green-600 text-white' 
+              : 'bg-yellow-500 text-gray-900'
+          }`}>
+            Players: {playerCountInfo.players}/4 {playerCountInfo.ready ? 'READY' : 'Waiting...'}
+          </div>
         </div>
       </div>
+      {!playerCountInfo.ready && (
+        <div className="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-4 rounded">
+          <p className="font-bold">Waiting for Players</p>
+          <p className="text-sm">The game requires 4 players to start. Share the invite code <span className="font-mono font-bold">{currentInviteCode}</span> with your friends!</p>
+        </div>
+      )}
       <Table players={players} currentSeat={state.currentPlayer || 0} />
     </div>
   );

@@ -8,11 +8,52 @@ interface LobbyViewProps {
 }
 
 export default function LobbyView({ messages, onCreateTable, onJoinTable }: LobbyViewProps) {
-  const [, forceUpdate] = React.useReducer(x => x + 1, 0);
   const [inviteCode, setInviteCode] = useState('');
   const [isCreating, setIsCreating] = useState(false);
   const [isJoining, setIsJoining] = useState(false);
-  const [dismissedErrors, setDismissedErrors] = useState<Set<string>>(new Set());
+  
+  // Load dismissed errors from localStorage
+  const [dismissedErrors, setDismissedErrors] = useState<Set<string>>(() => {
+    try {
+      const stored = localStorage.getItem('mahjong_dismissed_errors');
+      if (stored) {
+        return new Set(JSON.parse(stored));
+      }
+    } catch (e) {
+      console.error('Failed to load dismissed errors:', e);
+    }
+    return new Set();
+  });
+  
+  const [refreshCounter, setRefreshCounter] = useState(0);
+  
+  // Reset isCreating/isJoining when we get a response
+  React.useEffect(() => {
+    const lastMessage = messages[messages.length - 1];
+    if (!lastMessage) return;
+    
+    if (lastMessage.type === 'table_created') {
+      setIsCreating(false);
+    } else if (lastMessage.type === 'table_joined') {
+      setIsJoining(false);
+    } else if (lastMessage.type === 'action_result') {
+      const actionResult = lastMessage as any;
+      if (!actionResult.ok) {
+        // Reset both on error since we don't know which action failed
+        setIsCreating(false);
+        setIsJoining(false);
+      }
+    }
+  }, [messages]);
+  
+  // Persist dismissed errors to localStorage whenever they change
+  React.useEffect(() => {
+    try {
+      localStorage.setItem('mahjong_dismissed_errors', JSON.stringify([...dismissedErrors]));
+    } catch (e) {
+      console.error('Failed to save dismissed errors:', e);
+    }
+  }, [dismissedErrors]);
   
   // Force a re-read of localStorage by tracking table-related messages
   const tableMessages = React.useMemo(() => {
@@ -23,14 +64,12 @@ export default function LobbyView({ messages, onCreateTable, onJoinTable }: Lobb
     ).length;
   }, [messages]);
 
-  // Get tables from localStorage and update when table messages change
+  // Get tables from localStorage and update when table messages change OR when manually refreshed
   const allTables = React.useMemo(() => {
     try {
       const stored = localStorage.getItem('mahjong_my_tables');
-      console.log('[LobbyView] Reading from localStorage:', stored);
       if (stored) {
         const tables = JSON.parse(stored);
-        console.log('[LobbyView] Parsed tables:', tables);
         return tables.map((t: any) => ({
           inviteCode: t.inviteCode,
           type: t.isCreator ? 'created' as const : 'joined' as const,
@@ -41,7 +80,7 @@ export default function LobbyView({ messages, onCreateTable, onJoinTable }: Lobb
       console.error('Failed to load tables:', e);
     }
     return [];
-  }, [tableMessages]); // Recompute whenever table message count changes
+  }, [tableMessages, refreshCounter]); // Recompute whenever table message count changes OR refreshCounter changes
   
   // Only show errors from the last 10 messages that haven't been dismissed
   const recentMessages = messages.slice(-10);
@@ -69,7 +108,9 @@ export default function LobbyView({ messages, onCreateTable, onJoinTable }: Lobb
     const clientSeed = globalThis.crypto && 'randomUUID' in globalThis.crypto 
       ? (globalThis.crypto as any).randomUUID() 
       : Math.random().toString(36).slice(2);
-    onJoinTable(inviteCode.trim().toUpperCase(), clientSeed);
+    const code = inviteCode.trim().toUpperCase();
+    console.log('[LobbyView] Attempting to join table with code:', code);
+    onJoinTable(code, clientSeed);
   };
 
   const handleRemoveTable = (inviteCode: string) => {
@@ -79,7 +120,7 @@ export default function LobbyView({ messages, onCreateTable, onJoinTable }: Lobb
         const tables = JSON.parse(stored);
         const filtered = tables.filter((t: any) => t.inviteCode !== inviteCode);
         localStorage.setItem('mahjong_my_tables', JSON.stringify(filtered));
-        forceUpdate(); // Force re-render to update the list
+        setRefreshCounter(c => c + 1); // Trigger re-computation of allTables
       }
     } catch (e) {
       console.error('Failed to remove table:', e);
@@ -122,6 +163,7 @@ export default function LobbyView({ messages, onCreateTable, onJoinTable }: Lobb
                   <div className="flex items-center gap-2">
                     <button
                       onClick={() => {
+                        console.log('[LobbyView] Connect button clicked for table:', table.inviteCode);
                         const clientSeed = globalThis.crypto && 'randomUUID' in globalThis.crypto 
                           ? (globalThis.crypto as any).randomUUID() 
                           : Math.random().toString(36).slice(2);
