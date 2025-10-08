@@ -4,41 +4,69 @@ import { BrowserRouter, Routes, Route, useNavigate } from 'react-router-dom';
 import './ui/index.css';
 import LobbyPage from './pages/LobbyPage';
 import TablePage from './pages/TablePage';
+import AdminPage from './pages/AdminPage';
+import AdminTableView from './pages/AdminTableView';
 import { useWS } from './ui/hooks/useWS';
 
 function App() {
-  const { messages, createTable, joinTable, leaveTable, clearHistory } = useWS('ws://localhost:8080', '');
+  const { 
+    messages, 
+    send,
+    createTable, 
+    joinTable, 
+    leaveTable, 
+    clearHistory,
+    adminAuth,
+    adminListTables,
+    adminJoinTable
+  } = useWS('ws://localhost:8080', '');
   const navigate = useNavigate();
   const prevMessagesLengthRef = React.useRef(messages.length);
 
   // Auto-navigate to table when join/create happens, and back to lobby on leave
   useEffect(() => {
-    // Only check navigation if we got a NEW message
+    // Only check navigation if we got NEW messages
     if (messages.length === prevMessagesLengthRef.current) {
       return;
     }
+    
+    const oldLength = prevMessagesLengthRef.current;
     prevMessagesLengthRef.current = messages.length;
     
-    // Check the most recent message to see if it's a navigation trigger
+    // Check all NEW messages (not just the last one, since multiple may arrive at once)
     if (messages.length === 0) return;
     
-    const lastMessage = messages[messages.length - 1] as any;
+    const newMessages = messages.slice(oldLength);
     const currentPath = window.location.pathname;
     
-    console.log('[App] Navigation check - lastMessage:', lastMessage.type, 'currentPath:', currentPath);
+    console.log('[App] Checking', newMessages.length, 'new messages for navigation. currentPath:', currentPath);
     
-    // If the last message was joining/creating a table, navigate to it
-    if ((lastMessage.type === 'table_created' || lastMessage.type === 'table_joined') && currentPath === '/') {
-      const inviteCode = lastMessage.inviteCode;
-      console.log('[App] Navigating to table:', inviteCode);
-      if (inviteCode) {
-        navigate(`/table/${inviteCode}`);
+    // Look for navigation triggers in all new messages
+    for (const msg of newMessages) {
+      const message = msg as any;
+      
+      // If we got a table_created or table_joined message, navigate to it
+      if (message.type === 'table_created' || message.type === 'table_joined') {
+        if (currentPath === '/') {
+          const inviteCode = message.inviteCode;
+          console.log('[App] ✅ Found', message.type, 'message, inviteCode:', inviteCode);
+          if (inviteCode) {
+            console.log('[App] 🚀 Navigating to /table/' + inviteCode);
+            navigate(`/table/${inviteCode}`);
+            return; // Stop checking after first navigation
+          } else {
+            console.error('[App] ❌ No inviteCode found in message!');
+          }
+        } else {
+          console.log('[App] ⚠️ Already on a table page, not navigating. currentPath:', currentPath);
+        }
       }
-    }
-    // If the last message was leaving a table, navigate back to lobby
-    else if (lastMessage.type === 'table_left' && currentPath.startsWith('/table/')) {
-      console.log('[App] Navigating back to lobby');
-      navigate('/');
+      // If we got a table_left message, navigate back to lobby
+      else if (message.type === 'table_left' && currentPath.startsWith('/table/')) {
+        console.log('[App] Navigating back to lobby');
+        navigate('/');
+        return; // Stop checking after first navigation
+      }
     }
   }, [messages, navigate]);
 
@@ -60,6 +88,27 @@ function App() {
           <TablePage
             messages={messages}
             onLeaveTable={leaveTable}
+            onJoinTable={joinTable}
+            onSendMessage={send}
+          />
+        } 
+      />
+      <Route 
+        path="/admin" 
+        element={
+          <AdminPage
+            messages={messages}
+            onAdminAuth={adminAuth}
+            onListTables={adminListTables}
+          />
+        } 
+      />
+      <Route 
+        path="/admin/table/:inviteCode" 
+        element={
+          <AdminTableView
+            messages={messages}
+            onAdminJoinTable={adminJoinTable}
           />
         } 
       />

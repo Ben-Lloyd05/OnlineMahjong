@@ -3,8 +3,8 @@ import { ServerToClient } from '../../../server/ws/protocol';
 
 interface LobbyViewProps {
   messages: ServerToClient[];
-  onCreateTable: (clientSeed?: string) => void;
-  onJoinTable: (inviteCode: string, clientSeed?: string) => void;
+  onCreateTable: (clientSeed?: string, username?: string) => void;
+  onJoinTable: (inviteCode: string, clientSeed?: string, username?: string) => void;
 }
 
 export default function LobbyView({ messages, onCreateTable, onJoinTable }: LobbyViewProps) {
@@ -12,18 +12,21 @@ export default function LobbyView({ messages, onCreateTable, onJoinTable }: Lobb
   const [isCreating, setIsCreating] = useState(false);
   const [isJoining, setIsJoining] = useState(false);
   
-  // Load dismissed errors from localStorage
-  const [dismissedErrors, setDismissedErrors] = useState<Set<string>>(() => {
+  // Username management
+  const [username, setUsername] = useState(() => {
     try {
-      const stored = localStorage.getItem('mahjong_dismissed_errors');
-      if (stored) {
-        return new Set(JSON.parse(stored));
-      }
+      return localStorage.getItem('mahjong_username') || '';
     } catch (e) {
-      console.error('Failed to load dismissed errors:', e);
+      return '';
     }
-    return new Set();
   });
+  const [showUsernameModal, setShowUsernameModal] = useState(false);
+  const [usernameInput, setUsernameInput] = useState('');
+  const [pendingAction, setPendingAction] = useState<'create' | 'join' | null>(null);
+  const [pendingInviteCode, setPendingInviteCode] = useState('');
+  
+  // Track dismissed errors in memory only (no localStorage to avoid quota issues)
+  const [dismissedErrors, setDismissedErrors] = useState<Set<string>>(new Set());
   
   const [refreshCounter, setRefreshCounter] = useState(0);
   
@@ -46,14 +49,24 @@ export default function LobbyView({ messages, onCreateTable, onJoinTable }: Lobb
     }
   }, [messages]);
   
-  // Persist dismissed errors to localStorage whenever they change
+  // Note: Dismissed errors are stored in memory only to avoid localStorage quota issues
+  
+  // Auto-dismiss errors after 10 seconds
   React.useEffect(() => {
-    try {
-      localStorage.setItem('mahjong_dismissed_errors', JSON.stringify([...dismissedErrors]));
-    } catch (e) {
-      console.error('Failed to save dismissed errors:', e);
-    }
-  }, [dismissedErrors]);
+    const timer = setTimeout(() => {
+      // Find all error traceIds from the messages
+      const allErrorIds = messages
+        .filter((m: any) => m.type === 'action_result' && !m.ok)
+        .map((m: any) => m.traceId);
+      
+      // Add all of them to dismissed errors (auto-dismiss after 10 seconds)
+      if (allErrorIds.length > 0) {
+        setDismissedErrors(new Set([...dismissedErrors, ...allErrorIds]));
+      }
+    }, 10000); // 10 seconds
+
+    return () => clearTimeout(timer);
+  }, [messages]); // Only re-run when messages change
   
   // Force a re-read of localStorage by tracking table-related messages
   const tableMessages = React.useMemo(() => {
@@ -82,26 +95,63 @@ export default function LobbyView({ messages, onCreateTable, onJoinTable }: Lobb
     return [];
   }, [tableMessages, refreshCounter]); // Recompute whenever table message count changes OR refreshCounter changes
   
-  // Only show errors from the last 10 messages that haven't been dismissed
-  const recentMessages = messages.slice(-10);
-  const actionResult = recentMessages.find(m => {
-    const msg = m as any;
-    return msg.type === 'action_result' && !msg.ok && !dismissedErrors.has(msg.traceId);
-  }) as any;
+  // Only show the MOST RECENT error that hasn't been dismissed
+  // Filter out "table_full" and admin-related errors
+  const actionResult = React.useMemo(() => {
+    // Search from most recent to oldest
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const msg = messages[i] as any;
+      if (msg.type === 'action_result' && !msg.ok) {
+        // Skip if already dismissed
+        if (dismissedErrors.has(msg.traceId)) {
+          continue;
+        }
+        // Don't show "table full" errors in the lobby - they're handled by TablePage
+        if (msg.error?.code === 'table_full') {
+          continue;
+        }
+        // Don't show admin-related errors in the lobby
+        if (msg.error?.code === 'unauthorized' || msg.error?.message?.includes('Admin authentication')) {
+          continue;
+        }
+        // Return the first (most recent) non-dismissed, non-filtered error
+        console.log('[LobbyView] Showing error:', msg.error?.message, 'traceId:', msg.traceId);
+        return msg;
+      }
+    }
+    return null;
+  }, [messages, dismissedErrors]);
   const hasTables = allTables.length > 0;
 
   const handleCreateTable = () => {
+    // Check if user has a username
+    if (!username) {
+      setPendingAction('create');
+      setUsernameInput('');
+      setShowUsernameModal(true);
+      return;
+    }
+    
     setIsCreating(true);
     // Generate a client seed for this table
     const clientSeed = globalThis.crypto && 'randomUUID' in globalThis.crypto 
       ? (globalThis.crypto as any).randomUUID() 
       : Math.random().toString(36).slice(2);
-    onCreateTable(clientSeed);
+    onCreateTable(clientSeed, username);
   };
 
   const handleJoinTable = (e: React.FormEvent) => {
     e.preventDefault();
     if (!inviteCode.trim()) return;
+    
+    // Check if user has a username
+    if (!username) {
+      setPendingAction('join');
+      setPendingInviteCode(inviteCode.trim().toUpperCase());
+      setUsernameInput('');
+      setShowUsernameModal(true);
+      return;
+    }
     
     setIsJoining(true);
     // Generate a client seed for this table
@@ -110,7 +160,38 @@ export default function LobbyView({ messages, onCreateTable, onJoinTable }: Lobb
       : Math.random().toString(36).slice(2);
     const code = inviteCode.trim().toUpperCase();
     console.log('[LobbyView] Attempting to join table with code:', code);
-    onJoinTable(code, clientSeed);
+    onJoinTable(code, clientSeed, username);
+  };
+
+  const handleUsernameSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const trimmedUsername = usernameInput.trim();
+    if (!trimmedUsername) return;
+    
+    // Save username to localStorage
+    setUsername(trimmedUsername);
+    localStorage.setItem('mahjong_username', trimmedUsername);
+    setShowUsernameModal(false);
+    
+    // Execute the pending action
+    if (pendingAction === 'create') {
+      setIsCreating(true);
+      const clientSeed = globalThis.crypto && 'randomUUID' in globalThis.crypto 
+        ? (globalThis.crypto as any).randomUUID() 
+        : Math.random().toString(36).slice(2);
+      onCreateTable(clientSeed, trimmedUsername);
+    } else if (pendingAction === 'join') {
+      setIsJoining(true);
+      const clientSeed = globalThis.crypto && 'randomUUID' in globalThis.crypto 
+        ? (globalThis.crypto as any).randomUUID() 
+        : Math.random().toString(36).slice(2);
+      console.log('[LobbyView] Attempting to join table with code:', pendingInviteCode);
+      onJoinTable(pendingInviteCode, clientSeed, trimmedUsername);
+    }
+    
+    // Clear pending action
+    setPendingAction(null);
+    setPendingInviteCode('');
   };
 
   const handleRemoveTable = (inviteCode: string) => {
@@ -167,7 +248,7 @@ export default function LobbyView({ messages, onCreateTable, onJoinTable }: Lobb
                         const clientSeed = globalThis.crypto && 'randomUUID' in globalThis.crypto 
                           ? (globalThis.crypto as any).randomUUID() 
                           : Math.random().toString(36).slice(2);
-                        onJoinTable(table.inviteCode, clientSeed);
+                        onJoinTable(table.inviteCode, clientSeed, username);
                       }}
                       className={`px-4 py-2 ${table.type === 'created' ? 'bg-green-600 hover:bg-green-700' : 'bg-blue-600 hover:bg-blue-700'} text-white text-sm font-medium rounded transition-colors`}
                     >
@@ -244,8 +325,90 @@ export default function LobbyView({ messages, onCreateTable, onJoinTable }: Lobb
         
         <div className="mt-8 text-center text-sm text-gray-500">
           <p>American Mahjong • Online Multiplayer</p>
+          {username && (
+            <p className="mt-2">
+              Playing as: <span className="font-semibold text-gray-700">{username}</span>
+              {' • '}
+              <button
+                onClick={() => {
+                  setUsernameInput(username);
+                  setPendingAction(null);
+                  setShowUsernameModal(true);
+                }}
+                className="text-blue-600 hover:text-blue-800 underline"
+              >
+                Change
+              </button>
+            </p>
+          )}
+          <p className="mt-2">
+            <button
+              onClick={() => {
+                if (confirm('Clear all stored data? This will remove your message history and table list.')) {
+                  try {
+                    localStorage.clear();
+                    window.location.reload();
+                  } catch (e) {
+                    console.error('Failed to clear storage:', e);
+                  }
+                }
+              }}
+              className="text-red-600 hover:text-red-800 underline text-xs"
+            >
+              Clear Storage
+            </button>
+          </p>
         </div>
       </div>
+
+      {/* Username Modal */}
+      {showUsernameModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-xl shadow-2xl p-8 max-w-md w-full">
+            <h2 className="text-2xl font-bold text-center mb-4 text-gray-800">
+              Enter Your Username
+            </h2>
+            <p className="text-gray-600 text-center mb-6">
+              Choose a username to identify yourself in the game
+            </p>
+            <form onSubmit={handleUsernameSubmit}>
+              <div className="mb-6">
+                <input
+                  type="text"
+                  value={usernameInput}
+                  onChange={(e) => setUsernameInput(e.target.value)}
+                  placeholder="Your username"
+                  maxLength={20}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent text-center text-lg"
+                  autoFocus
+                />
+              </div>
+              <div className="flex gap-3">
+                {pendingAction && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowUsernameModal(false);
+                      setPendingAction(null);
+                      setPendingInviteCode('');
+                    }}
+                    className="flex-1 bg-gray-300 hover:bg-gray-400 text-gray-800 font-semibold py-3 px-4 rounded-lg transition-colors"
+                  >
+                    Cancel
+                  </button>
+                )}
+                <button
+                  type="submit"
+                  disabled={!usernameInput.trim()}
+                  className="flex-1 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-semibold py-3 px-4 rounded-lg transition-colors"
+                >
+                  {pendingAction ? 'Continue' : 'Save'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

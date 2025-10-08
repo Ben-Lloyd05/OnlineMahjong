@@ -4,11 +4,9 @@
  */
 
 import { GameState, PlayerId, RuleCard } from './types';
-import { CharlestonOptions } from './charleston';
 
 // Game Options for lobby system
 export interface GameOptions {
-  charleston: CharlestonOptions;
   ruleCard: RuleCard;
 }
 

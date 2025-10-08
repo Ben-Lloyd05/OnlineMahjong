@@ -29,7 +29,7 @@ import { GameState, PlayerId, Tile, Move } from './types';
 import { DeterministicRNG } from './rng';
 import { setupGame } from './wall';
 import { create2024AmericanRuleCard } from './rulecard';
-import { runFirstCharleston, runSecondCharleston, runCourtesyPass } from './charleston';
+// Charleston logic is now in charleston-manager.ts
 import { validateMove, validateDeadHand } from './validation';
 
 export function startNewGame(clientSeed: string, serverSecret: string, dealer: PlayerId = 0): GameState {
@@ -57,12 +57,6 @@ export function startNewGame(clientSeed: string, serverSecret: string, dealer: P
     discardPile: [],
     charleston: undefined,
     options: {
-      charleston: {
-        secondCharlestonEnabled: true,
-        enableCourtesyPass: true,
-        enableBlindPass: false,
-        enableTileStealing: true
-      },
       ruleCard
     },
     logs: [],

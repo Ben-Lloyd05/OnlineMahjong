@@ -3,7 +3,7 @@
  * Common TypeScript types for American Mahjong engine
  */
 
-import { CharlestonState, CharlestonOptions } from './charleston';
+import { CharlestonState } from './charleston';
 
 // American Mahjong uses 152 tiles total
 export type Tile = string; 
@@ -61,7 +61,6 @@ export interface GameState {
   };
   charleston?: CharlestonState;
   options: {
-    charleston: CharlestonOptions;
     ruleCard: RuleCard;
   };
   logs: Move[];

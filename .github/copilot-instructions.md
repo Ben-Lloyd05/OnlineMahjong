@@ -1,6 +1,6 @@
 # Copilot instructions for this repo
 
-Use these project-specific rules to move fast. Prefer existing modules/types; don’t invent new protocols.
+Use these project-specific rules to move fast. Prefer existing modules/types; don’t invent new protocols. Do not ever use emojis.
 
 ## Big picture
 - Server-authoritative American Mahjong over WebSockets.

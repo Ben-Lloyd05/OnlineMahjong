@@ -5,7 +5,8 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && npm run copy-data",
+    "copy-data": "mkdir -p dist/data && cp src/data/*.json dist/data/",
     "test": "jest --config jest.config.js --runInBand",
     "test:watch": "jest --watch",
     "start:ws": "npm run build && node -e \"require('./dist/server/ws/server.js').startServer(process.env.PORT||8080)\"",

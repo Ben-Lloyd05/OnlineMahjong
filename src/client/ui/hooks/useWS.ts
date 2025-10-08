@@ -20,12 +20,40 @@ export function useWS(url: string, tableId: string, opts?: { clientSeed?: string
     return [];
   });
 
-  // Persist messages to localStorage whenever they change
+  // Persist messages to localStorage whenever they change (limit to last 100 to prevent quota issues)
   useEffect(() => {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(messages));
+      // Keep only the last 100 messages to prevent localStorage from filling up
+      const messagesToStore = messages.slice(-100);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(messagesToStore));
     } catch (e) {
       console.error('Failed to save table history:', e);
+      // If we hit quota, clear old data and try again with just recent messages
+      try {
+        localStorage.removeItem(STORAGE_KEY);
+        const recentMessages = messages.slice(-50);
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(recentMessages));
+      } catch (e2) {
+        console.error('Failed to save even after clearing:', e2);
+      }
+    }
+  }, [messages]);
+
+  // Store session tokens when received
+  useEffect(() => {
+    const lastMessage = messages[messages.length - 1] as any;
+    if (!lastMessage) return;
+    
+    // Store session token from table_created or table_joined
+    if ((lastMessage.type === 'table_created' || lastMessage.type === 'table_joined') && lastMessage.sessionToken) {
+      const inviteCode = lastMessage.inviteCode;
+      console.log('[useWS] Storing session token for table:', inviteCode);
+      localStorage.setItem(`mahjong_session_${inviteCode}`, lastMessage.sessionToken);
+      
+      // Also log if this was a reconnection
+      if (lastMessage.reconnected) {
+        console.log('[useWS] Successfully reconnected to table!');
+      }
     }
   }, [messages]);
 
@@ -92,17 +120,33 @@ export function useWS(url: string, tableId: string, opts?: { clientSeed?: string
       }
     };
     
-    ws.onclose = () => {
-      console.log('[useWS] WebSocket closed');
+    ws.onclose = (event) => {
+      console.log('[useWS] WebSocket closed:', event.code, event.reason);
+      // Try to reconnect after a delay if it wasn't a clean close
+      if (event.code !== 1000) {
+        console.log('[useWS] Connection lost, will attempt to reconnect...');
+        setTimeout(() => {
+          console.log('[useWS] Attempting to reconnect...');
+          // The useEffect will create a new connection
+        }, 3000);
+      }
     };
     
     ws.onerror = (error) => {
-      console.error('[useWS] WebSocket error:', error);
+      // Only log significant errors, not connection attempts
+      if (ws.readyState === WebSocket.CONNECTING) {
+        console.log('[useWS] Waiting for WebSocket server...');
+      } else {
+        console.error('[useWS] WebSocket error:', error);
+      }
     };
     
     return () => {
       console.log('[useWS] Cleaning up WebSocket connection');
-      ws.close();
+      // Use code 1000 for normal closure
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.close(1000, 'Component unmounting');
+      }
     };
   }, [url, tableId]);
 
@@ -119,16 +163,21 @@ export function useWS(url: string, tableId: string, opts?: { clientSeed?: string
     wsRef.current.send(JSON.stringify(msg));
   };
 
-  const createTable = (clientSeed?: string) => {
+  const createTable = (clientSeed?: string, username?: string) => {
     const ts = new Date().toISOString();
     const tid = cryptoRandomId();
-    send({ type: 'create_table', traceId: tid(), ts, clientSeed } as ClientToServer);
+    const sessionToken = localStorage.getItem('mahjong_session_token') || undefined;
+    send({ type: 'create_table', traceId: tid(), ts, clientSeed, username, sessionToken } as ClientToServer);
   };
 
-  const joinTable = (inviteCode: string, clientSeed?: string) => {
+  const joinTable = (inviteCode: string, clientSeed?: string, username?: string) => {
     const ts = new Date().toISOString();
     const tid = cryptoRandomId();
-    send({ type: 'join_table', traceId: tid(), ts, inviteCode, clientSeed } as ClientToServer);
+    // Try to get session token for reconnection
+    const storedToken = localStorage.getItem(`mahjong_session_${inviteCode}`);
+    const sessionToken = storedToken || undefined;
+    console.log('[useWS] Joining table with session token:', sessionToken ? 'Yes' : 'No');
+    send({ type: 'join_table', traceId: tid(), ts, inviteCode, clientSeed, username, sessionToken } as ClientToServer);
   };
 
   const leaveTable = () => {
@@ -153,7 +202,37 @@ export function useWS(url: string, tableId: string, opts?: { clientSeed?: string
     }
   };
 
-  return { messages, send, createTable, joinTable, leaveTable, getMyTables, clearHistory };
+  // Admin functions
+  const adminAuth = (password: string) => {
+    const ts = new Date().toISOString();
+    const tid = cryptoRandomId();
+    send({ type: 'admin_auth', traceId: tid(), ts, password } as ClientToServer);
+  };
+
+  const adminListTables = () => {
+    const ts = new Date().toISOString();
+    const tid = cryptoRandomId();
+    send({ type: 'admin_list_tables', traceId: tid(), ts } as ClientToServer);
+  };
+
+  const adminJoinTable = (inviteCode: string) => {
+    const ts = new Date().toISOString();
+    const tid = cryptoRandomId();
+    send({ type: 'admin_join_table', traceId: tid(), ts, inviteCode } as ClientToServer);
+  };
+
+  return { 
+    messages, 
+    send, 
+    createTable, 
+    joinTable, 
+    leaveTable, 
+    getMyTables, 
+    clearHistory,
+    adminAuth,
+    adminListTables,
+    adminJoinTable
+  };
 }
 
 function cryptoRandomId() {

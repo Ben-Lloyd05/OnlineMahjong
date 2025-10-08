@@ -1,0 +1,692 @@
+/* Charleston UI Styles */
+
+.charleston-container {
+  padding: 20px;
+  background: linear-gradient(135deg, #1a472a 0%, #2d5a3d 100%);
+  border-radius: 12px;
+  color: white;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.charleston-complete {
+  text-align: center;
+  padding: 60px 20px;
+  background: linear-gradient(135deg, #1a472a 0%, #2d5a3d 100%);
+  border-radius: 12px;
+  color: white;
+}
+
+.charleston-complete h2 {
+  font-size: 2.5rem;
+  margin-bottom: 20px;
+  color: #4ade80;
+}
+
+/* Header */
+.charleston-header {
+  margin-bottom: 30px;
+}
+
+.charleston-progress {
+  text-align: center;
+  margin-bottom: 15px;
+}
+
+.charleston-progress h2 {
+  font-size: 1.8rem;
+  margin-bottom: 10px;
+  color: #fbbf24;
+}
+
+.progress-dots {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  margin: 15px 0;
+}
+
+.progress-dots .dot {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.3);
+  transition: all 0.3s ease;
+}
+
+.progress-dots .dot.active {
+  background: #fbbf24;
+  box-shadow: 0 0 12px #fbbf24;
+  transform: scale(1.3);
+}
+
+.progress-dots .dot.completed {
+  background: #4ade80;
+}
+
+.charleston-instructions {
+  text-align: center;
+  background: rgba(0, 0, 0, 0.3);
+  padding: 15px;
+  border-radius: 8px;
+}
+
+.phase-message {
+  font-size: 1.2rem;
+  font-weight: 600;
+  color: #fbbf24;
+  margin: 0;
+}
+
+/* Player ready cards */
+.players-ready-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+
+.player-ready-card {
+  background: rgba(255, 255, 255, 0.1);
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-radius: 12px;
+  padding: 1rem;
+  text-align: center;
+  transition: all 0.3s ease;
+}
+
+.player-ready-card.ready {
+  background: rgba(34, 197, 94, 0.2);
+  border-color: #22c55e;
+  box-shadow: 0 0 20px rgba(34, 197, 94, 0.3);
+}
+
+.player-ready-card.you {
+  border-color: #fbbf24;
+  box-shadow: 0 0 15px rgba(251, 191, 36, 0.3);
+}
+
+/* Blind pass animation */
+.player-ready-card.blind-passing {
+  animation: blindPassPulse 1.5s ease-in-out infinite;
+}
+
+@keyframes blindPassPulse {
+  0%, 100% {
+    background: rgba(147, 51, 234, 0.2);
+    border-color: #9333ea;
+    box-shadow: 0 0 15px rgba(147, 51, 234, 0.4);
+    transform: scale(1);
+  }
+  50% {
+    background: rgba(147, 51, 234, 0.35);
+    border-color: #a855f7;
+    box-shadow: 0 0 25px rgba(147, 51, 234, 0.6);
+    transform: scale(1.03);
+  }
+}
+
+.player-name {
+  font-weight: 600;
+  font-size: 1.1rem;
+  display: block;
+  margin-bottom: 5px;
+}
+
+.you-badge {
+  display: inline-block;
+  background: #fbbf24;
+  color: #1a472a;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: bold;
+  margin-left: 8px;
+}
+
+.blind-pass-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  font-size: 0.85rem;
+  color: #a855f7;
+  font-weight: 600;
+  animation: fadeInUp 0.3s ease;
+}
+
+.blind-pass-indicator::before {
+  content: '👁️';
+  font-size: 1.2rem;
+  animation: eyeFlash 2s ease-in-out infinite;
+}
+
+@keyframes eyeFlash {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.status-badge {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 0.9rem;
+  margin-top: 8px;
+}
+
+.status-badge.ready {
+  background: #4ade80;
+  color: #1a472a;
+  font-weight: 600;
+}
+
+.status-badge.waiting {
+  background: rgba(255, 255, 255, 0.2);
+  color: #d1d5db;
+}
+
+.blind-pass-indicator {
+  display: block;
+  margin-top: 8px;
+  font-size: 0.85rem;
+  color: #fbbf24;
+  font-style: italic;
+}
+
+/* Vote Section */
+.vote-section {
+  background: rgba(0, 0, 0, 0.3);
+  padding: 25px;
+  border-radius: 12px;
+  margin-bottom: 25px;
+  text-align: center;
+}
+
+.vote-section h3 {
+  font-size: 1.5rem;
+  margin-bottom: 20px;
+  color: #fbbf24;
+}
+
+.vote-buttons {
+  display: flex;
+  gap: 20px;
+  justify-content: center;
+  margin-bottom: 20px;
+}
+
+.vote-button {
+  padding: 15px 40px;
+  font-size: 1.2rem;
+  border: 3px solid rgba(255, 255, 255, 0.3);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.1);
+  color: white;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  font-weight: 600;
+}
+
+.vote-button:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.vote-button.selected.yes {
+  background: #4ade80;
+  border-color: #4ade80;
+  color: #1a472a;
+}
+
+.vote-button.selected.no {
+  background: #ef4444;
+  border-color: #ef4444;
+  color: white;
+}
+
+.vote-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.vote-tally {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+}
+
+.vote-indicator {
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-size: 0.95rem;
+}
+
+.vote-indicator.yes {
+  background: rgba(74, 222, 128, 0.2);
+  border: 1px solid #4ade80;
+}
+
+.vote-indicator.no {
+  background: rgba(239, 68, 68, 0.2);
+  border: 1px solid #ef4444;
+}
+
+/* Courtesy Section */
+.courtesy-section {
+  background: rgba(0, 0, 0, 0.3);
+  padding: 25px;
+  border-radius: 12px;
+  margin-bottom: 25px;
+}
+
+.courtesy-section h3 {
+  font-size: 1.3rem;
+  margin-bottom: 15px;
+  color: #fbbf24;
+  text-align: center;
+}
+
+.target-selection {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: center;
+}
+
+.target-option {
+  padding: 12px 24px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.1);
+  color: white;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  font-size: 1rem;
+}
+
+.target-option:hover {
+  transform: translateY(-2px);
+  border-color: #fbbf24;
+}
+
+.target-option.selected {
+  background: #fbbf24;
+  border-color: #fbbf24;
+  color: #1a472a;
+  font-weight: 600;
+}
+
+.mutual-indicator {
+  color: #4ade80;
+  font-size: 0.85rem;
+  font-weight: normal;
+}
+
+/* Blind Pass Section */
+.blind-pass-section {
+  background: rgba(0, 0, 0, 0.3);
+  padding: 20px;
+  border-radius: 12px;
+  margin-bottom: 25px;
+}
+
+.blind-pass-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 1.1rem;
+  cursor: pointer;
+  margin-bottom: 15px;
+}
+
+.blind-pass-checkbox input[type="checkbox"] {
+  width: 20px;
+  height: 20px;
+  cursor: pointer;
+}
+
+.blind-pass-slider {
+  padding: 15px;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 8px;
+}
+
+.blind-pass-slider label {
+  display: block;
+  margin-bottom: 10px;
+  font-weight: 600;
+  color: #fbbf24;
+}
+
+.blind-pass-slider input[type="range"] {
+  width: 100%;
+  height: 8px;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+  outline: none;
+  margin: 10px 0;
+}
+
+.slider-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.9rem;
+  color: #d1d5db;
+  padding: 0 5px;
+}
+
+.blind-pass-info {
+  margin-top: 10px;
+  font-size: 0.95rem;
+  color: #fbbf24;
+  text-align: center;
+  font-style: italic;
+}
+
+/* Hand Section */
+.hand-section {
+  margin-bottom: 25px;
+}
+
+.hand-section h3 {
+  font-size: 1.3rem;
+  margin-bottom: 15px;
+  color: #fbbf24;
+  text-align: center;
+}
+
+.charleston-hand {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 12px;
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.charleston-tile {
+  width: 50px;
+  height: 70px;
+  background: white;
+  border: 3px solid #d1d5db;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.2rem;
+  font-weight: bold;
+  color: #1a472a;
+  transition: all 0.2s ease;
+  position: relative;
+  cursor: grab;
+}
+
+.charleston-tile:active {
+  cursor: grabbing;
+}
+
+.charleston-tile.clickable {
+  cursor: grab;
+}
+
+.charleston-tile.clickable:active {
+  cursor: grabbing;
+}
+
+.charleston-tile.clickable:hover {
+  transform: translateY(-8px);
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.3);
+  border-color: #fbbf24;
+}
+
+.charleston-tile.selected {
+  background: #fbbf24;
+  border-color: #fbbf24;
+  transform: translateY(-12px);
+  box-shadow: 0 12px 20px rgba(251, 191, 36, 0.4);
+}
+
+.charleston-tile.dragging {
+  opacity: 0.5;
+  cursor: grabbing;
+}
+
+.charleston-tile.joker-tile {
+  background: #d1d5db;
+  cursor: grab;
+}
+
+.charleston-tile.joker-tile:active {
+  cursor: grabbing;
+}
+
+/* Drop zones between tiles */
+.tile-drop-zone {
+  width: 16px;
+  min-height: 70px;
+  transition: all 0.2s ease;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: -8px;
+  margin-right: -8px;
+}
+
+.tile-drop-zone.drop-zone-active {
+  background: transparent;
+}
+
+.tile-drop-zone.drop-zone-active::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 3px;
+  height: 60%;
+  background: #22c55e;
+  border-radius: 2px;
+}
+
+.joker-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  color: white;
+  font-size: 0.6rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 3px;
+  text-align: center;
+  padding: 2px;
+}
+
+.selection-count {
+  text-align: center;
+  margin-top: 15px;
+  font-size: 1.1rem;
+  color: #fbbf24;
+  font-weight: 600;
+}
+
+/* Actions */
+.charleston-actions {
+  text-align: center;
+}
+
+.ready-button {
+  padding: 15px 60px;
+  font-size: 1.3rem;
+  border: none;
+  border-radius: 8px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.ready-button.enabled {
+  background: #4ade80;
+  color: #1a472a;
+}
+
+.ready-button.enabled:hover {
+  background: #22c55e;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(74, 222, 128, 0.4);
+}
+
+.ready-button.disabled {
+  background: #6b7280;
+  color: #d1d5db;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.ready-hint {
+  margin-top: 12px;
+  font-size: 0.95rem;
+  color: #d1d5db;
+  font-style: italic;
+}
+
+/* Pass execution overlay */
+.pass-execution-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  animation: fadeIn 0.3s ease;
+}
+
+.pass-animation-container {
+  text-align: center;
+  color: white;
+}
+
+.pass-animation-message {
+  font-size: 2rem;
+  font-weight: bold;
+  margin-bottom: 2rem;
+  color: #fbbf24;
+  animation: pulse 1s ease-in-out infinite;
+}
+
+.flying-tiles {
+  display: flex;
+  justify-content: center;
+  gap: 1rem;
+  margin: 2rem 0;
+}
+
+.flying-tile {
+  width: 60px;
+  height: 80px;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+  animation: flyAcross 1.5s ease-in-out infinite;
+}
+
+.flying-tile:nth-child(1) { animation-delay: 0s; }
+.flying-tile:nth-child(2) { animation-delay: 0.2s; }
+.flying-tile:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes flyAcross {
+  0% {
+    transform: translateX(-100px) rotate(-15deg);
+    opacity: 0;
+  }
+  50% {
+    opacity: 1;
+    transform: translateX(0) rotate(0deg);
+  }
+  100% {
+    transform: translateX(100px) rotate(15deg);
+    opacity: 0;
+  }
+}
+
+.blind-pass-notification {
+  margin-top: 1rem;
+  padding: 1rem;
+  background: rgba(147, 51, 234, 0.3);
+  border: 2px solid #9333ea;
+  border-radius: 8px;
+  font-size: 1.1rem;
+  color: #e9d5ff;
+  animation: slideInUp 0.5s ease;
+}
+
+@keyframes slideInUp {
+  from {
+    transform: translateY(20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .charleston-container {
+    padding: 15px;
+  }
+
+  .charleston-progress h2 {
+    font-size: 1.4rem;
+  }
+
+  .players-ready-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+
+  .charleston-hand {
+    gap: 6px;
+    padding: 15px;
+  }
+
+  .charleston-tile {
+    width: 40px;
+    height: 56px;
+    font-size: 1rem;
+  }
+
+  .vote-buttons {
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .vote-button {
+    width: 100%;
+  }
+}

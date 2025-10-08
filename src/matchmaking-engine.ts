@@ -495,12 +495,6 @@ export class MatchmakingEngine {
     return {
       maxPlayers: 4,
       gameOptions: {
-        charleston: {
-          secondCharlestonEnabled: false,
-          enableCourtesyPass: false,
-          enableBlindPass: false,
-          enableTileStealing: false
-        },
         ruleCard: {
           name: prefs.preferredRuleCards?.[0] || '2024',
           year: 2024,
