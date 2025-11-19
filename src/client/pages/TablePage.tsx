@@ -501,23 +501,7 @@ export default function TablePage({ messages, onLeaveTable, onJoinTable, onSendM
     });
   };
 
-  const handleCharlestonCourtesy = (tiles: string[], targetPlayer: number) => {
-    const joinMsg = messages.find((m: any) => 
-      (m.type === 'table_created' || m.type === 'table_joined') && 
-      m.inviteCode === inviteCode
-    ) as any;
-    
-    if (!joinMsg?.tableId) return;
-    
-    onSendMessage({
-      type: 'charleston_courtesy',
-      tableId: joinMsg.tableId,
-      tiles,
-      targetPlayer,
-      traceId: crypto.randomUUID(),
-      ts: new Date().toISOString()
-    });
-  };
+  // Courtesy pass removed
 
   // If table is full, show error screen
   if (tableFull) {
@@ -740,7 +724,6 @@ export default function TablePage({ messages, onLeaveTable, onJoinTable, onSendM
             onSelectTiles={handleCharlestonSelectTiles}
             onReady={handleCharlestonReady}
             onVote={handleCharlestonVote}
-            onCourtesyOffer={handleCharlestonCourtesy}
             onReorderHand={handleReorderHand}
           />
         </div>

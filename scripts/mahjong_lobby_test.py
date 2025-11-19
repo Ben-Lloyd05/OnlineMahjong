@@ -30,13 +30,33 @@ def start_servers():
     time.sleep(sleepTime)
 
 # Main orchestration
-def open_private_tab(invite_code=None, player_name=None):
+def open_private_tab(invite_code=None, player_name=None, player_id=None):
     chrome_options = Options()
     chrome_options.add_argument("--incognito")
-    chrome_options.add_argument("--window-size=800,600")
     service = Service(CHROMEDRIVER_PATH)
     driver = webdriver.Chrome(service=service, options=chrome_options)
-
+    
+    # Position windows based on player ID
+    # Layout: player 3 (left), player 2 (top middle), player 1 (right), player 0 (bottom middle)
+    window_width = 420
+    window_height = 800
+    
+    if player_id is not None:
+        if player_id == 0:  # Bottom middle
+            driver.set_window_position(520, 400)
+            driver.set_window_size(window_width, window_height-250)
+        elif player_id == 1:  # Right
+            driver.set_window_position(1050, 0)
+            driver.set_window_size(window_width, window_height)
+        elif player_id == 2:  # Top middle
+            driver.set_window_position(520, 0)
+            driver.set_window_size(window_width, window_height-250)
+        elif player_id == 3:  # Left
+            driver.set_window_position(0, 0)
+            driver.set_window_size(window_width, window_height)
+    else:
+        # Default size if no player_id provided
+        driver.set_window_size(window_width, window_height)
     
     driver.get("http://localhost:5173")
     # time.sleep(2)
@@ -64,7 +84,7 @@ def main():
     print("Servers restarted. Proceeding with browser automation...")
 
     # Step 1: Open first tab and create lobby
-    driver0 = open_private_tab()
+    driver0 = open_private_tab(player_id=0)
     # time.sleep(2)
     # Click create table button
     create_btn = driver0.find_element(By.XPATH, "//button[contains(text(), 'Create Table')]")
@@ -93,7 +113,7 @@ def main():
     # Step 2: Open other tabs and join
     drivers = [driver0]
     for i in range(1, 4):
-        drivers.append(open_private_tab(invite_code, f"player {i}"))
+        drivers.append(open_private_tab(invite_code, f"player {i}", player_id=i))
         # time.sleep(2)
 
     # Keep browsers open for manual inspection

@@ -11,11 +11,9 @@ import {
   handleCharlestonReady,
   handleCharlestonVote,
   handleCharlestonVoteSubmit,
-  handleCourtesyProposal,
   allPlayersReady,
   executeCharlestonPass,
   processVoteResults,
-  executeCourtesyPass,
   tallyVotes,
   getPhaseInstructions
 } from '../../charleston-manager';
@@ -240,10 +238,7 @@ function broadcastCharlestonState(tableId: string) {
       ready: state.ready,
       blindPass: state.blindPass,
       vote: state.vote,
-      courtesyOffer: state.courtesyOffer ? {
-        tiles: state.courtesyOffer.tiles,
-        targetPlayer: state.courtesyOffer.targetPlayer
-      } : undefined
+      // courtesy removed
     });
   }
   
@@ -704,95 +699,75 @@ export function startServer(port = 8080) {
         return;
       }
 
-      if (msg.type === 'get_my_tables') {
-        const myTables: { tableId: string; inviteCode: string; isCreator: boolean }[] = [];
+      if (msg.type === 'leave_table') {
+        if (!client.tableId) {
+          return;
+        }
+        const tableIdForBroadcast = client.tableId;
+        const table = tables.get(tableIdForBroadcast);
+        if (!table) {
+          return;
+        }
         
-        if (client.tableHistory) {
-          for (const tableId of client.tableHistory) {
-            const table = tables.get(tableId);
-            if (table) {
-              // Check if this client was the creator by checking if any client in this table has this connection
-              // Since we don't persist this across connections, we'll use a simpler approach:
-              // Just report if the table still exists
-              myTables.push({
-                tableId,
-                inviteCode: table.inviteCode,
-                isCreator: false // We can't reliably track this across reconnections
-              });
+        // Remove client from active connections
+        if (table.clients.has(client)) {
+          table.clients.delete(client);
+        }
+        
+        // Update/remove player session
+        if (client.playerId !== undefined) {
+          const session = table.playerSessions.get(client.playerId);
+          if (session) {
+            if (!table.gameStarted) {
+              // Before game start, fully remove the session/slot
+              cleanupPlayerSession(session);
+              table.playerSessions.delete(client.playerId);
+            } else {
+              // During a game, mark as disconnected
+              session.connected = false;
+              session.client = undefined;
+              session.disconnectedAt = Date.now();
             }
           }
         }
         
-        const response: ServerToClient = {
-          type: 'my_tables',
-          traceId: mkTrace(),
-          ts: nowIso(),
-          tables: myTables
-        };
-        ws.send(JSON.stringify(response));
-        return;
-      }
-
-      if (msg.type === 'leave_table') {
-        if (!client.tableId) return;
+        console.log(`[leave_table] After update - playerSessions size: ${table.playerSessions.size}, clients size: ${table.clients.size}`);
         
-        const tableIdForBroadcast = client.tableId;
-        const table = tables.get(client.tableId);
-        if (table) {
-          console.log(`[leave_table] Player ${client.playerId} (${client.username}) leaving. Game started: ${table.gameStarted}`);
-          console.log(`[leave_table] Before delete - playerSessions size: ${table.playerSessions.size}, clients size: ${table.clients.size}`);
-          
-          table.clients.delete(client);
-          
-          // Remove player session if game hasn't started
-          if (!table.gameStarted && client.playerId !== undefined) {
-            console.log(`[leave_table] Deleting session for playerId: ${client.playerId}`);
-            const session = table.playerSessions.get(client.playerId);
-            if (session) {
-              cleanupPlayerSession(session);
+        // Broadcast updates to remaining players
+        if (table.clients.size > 0) {
+          broadcastPlayerCount(tableIdForBroadcast);
+          broadcastPlayersUpdate(tableIdForBroadcast);
+        }
+        
+        // If creator leaves and table is empty, keep table alive for potential reconnection
+        if (client.isCreator && table.clients.size === 0) {
+          table.creatorLeft = true;
+          console.log(`[Table ${tableIdForBroadcast.slice(0, 8)}] Creator left, table empty but kept alive`);
+          setTimeout(() => {
+            const currentTable = tables.get(tableIdForBroadcast);
+            if (currentTable && currentTable.clients.size === 0) {
+              cleanupTable(currentTable);
+              tables.delete(tableIdForBroadcast);
+              inviteCodeToTableId.delete(currentTable.inviteCode);
+              console.log(`[Table ${tableIdForBroadcast.slice(0, 8)}] Cleaned up after timeout`);
             }
-            table.playerSessions.delete(client.playerId);
-          }
-          
-          console.log(`[leave_table] After delete - playerSessions size: ${table.playerSessions.size}, clients size: ${table.clients.size}`);
-          
-          // Broadcast updated player count and player list to remaining players
-          if (table.clients.size > 0) {
-            broadcastPlayerCount(tableIdForBroadcast);
-            broadcastPlayersUpdate(tableIdForBroadcast);
-          }
-          
-          // If creator is leaving, mark table but keep it alive for rejoining
-          if (client.isCreator && table.clients.size === 0) {
-            table.creatorLeft = true;
-            console.log(`[Table ${tableIdForBroadcast.slice(0, 8)}] Creator left, table empty but kept alive`);
-            // Set a timeout to clean up after 10 minutes if no one rejoins
-            setTimeout(() => {
-              const currentTable = tables.get(tableIdForBroadcast);
-              if (currentTable && currentTable.clients.size === 0) {
-                cleanupTable(currentTable);
-                tables.delete(tableIdForBroadcast);
-                inviteCodeToTableId.delete(currentTable.inviteCode);
-                console.log(`[Table ${tableIdForBroadcast.slice(0, 8)}] Cleaned up after timeout`);
-              }
-            }, 10 * 60 * 1000); // 10 minutes
-          }
-          // If non-creator leaves and table becomes empty, clean up immediately
-          else if (!client.isCreator && table.clients.size === 0) {
-            console.log(`[Table ${tableIdForBroadcast.slice(0, 8)}] All players left, cleaning up`);
-            cleanupTable(table);
-            tables.delete(client.tableId);
-            inviteCodeToTableId.delete(table.inviteCode);
-          }
+          }, 10 * 60 * 1000);
+        } else if (!client.isCreator && table.clients.size === 0) {
+          // Non-creator leaves and table becomes empty – clean up immediately
+          console.log(`[Table ${tableIdForBroadcast.slice(0, 8)}] All players left, cleaning up`);
+          cleanupTable(table);
+          tables.delete(tableIdForBroadcast);
+          inviteCodeToTableId.delete(table.inviteCode);
         }
         
         const response: ServerToClient = {
           type: 'table_left',
           traceId: mkTrace(),
           ts: nowIso(),
-          tableId: client.tableId
+          tableId: tableIdForBroadcast
         };
         
+        // Clear client bindings
         client.tableId = undefined;
         client.playerId = undefined;
         client.isCreator = undefined;
@@ -1070,41 +1045,36 @@ export function startServer(port = 8080) {
             };
             broadcast(tableId, voteResultMsg);
             
-            // Broadcast new state
-            setTimeout(() => broadcastCharlestonState(tableId), 1000);
-          } else if (phase === 'courtesy') {
-            // Execute courtesy pass
-            table.state = executeCourtesyPass(table.state);
-            
-            // Broadcast completion
-            const completeMsg: ServerToClient = {
-              type: 'charleston_complete',
-              traceId: mkTrace(),
-              ts: nowIso(),
-              tableId
-            };
-            broadcast(tableId, completeMsg);
-            
-            // Update all players' hands
-            for (const c of table.clients) {
-              const playerId = c.playerId!;
-              const playerHand = table.state.players[playerId].hand;
-              
-              const updateMsg: ServerToClient = {
-                type: 'game_state_update',
+            // After processing vote, either continue Charleston or complete
+            if (table.state.charleston.phase === 'complete') {
+              const completeMsg: ServerToClient = {
+                type: 'charleston_complete',
                 traceId: mkTrace(),
                 ts: nowIso(),
-                tableId,
-                delta: {
-                  phase: 'play',
-                  players: {
-                    [playerId]: {
-                      hand: playerHand
-                    }
-                  } as any
-                }
+                tableId
               };
-              c.ws.send(JSON.stringify(updateMsg));
+              broadcast(tableId, completeMsg);
+              // Transition to play
+              for (const c of table.clients) {
+                const playerId = c.playerId!;
+                const playerHand = table.state.players[playerId].hand;
+                const updateMsg: ServerToClient = {
+                  type: 'game_state_update',
+                  traceId: mkTrace(),
+                  ts: nowIso(),
+                  tableId,
+                  delta: {
+                    phase: 'play',
+                    players: {
+                      [playerId]: { hand: playerHand }
+                    } as any
+                  }
+                };
+                c.ws.send(JSON.stringify(updateMsg));
+              }
+            } else {
+              // Broadcast new state
+              setTimeout(() => broadcastCharlestonState(tableId), 1000);
             }
           } else {
             // Execute pass
@@ -1143,8 +1113,37 @@ export function startServer(port = 8080) {
               c.ws.send(JSON.stringify(passMsg));
             }
             
-            // Broadcast new state after a brief delay
-            setTimeout(() => broadcastCharlestonState(tableId), 500);
+            // After pass, either continue or complete
+            if (table.state.charleston.phase === 'complete') {
+              const completeMsg: ServerToClient = {
+                type: 'charleston_complete',
+                traceId: mkTrace(),
+                ts: nowIso(),
+                tableId
+              };
+              broadcast(tableId, completeMsg);
+              // Transition to play
+              for (const c of table.clients) {
+                const playerId = c.playerId!;
+                const playerHand = table.state.players[playerId].hand;
+                const updateMsg: ServerToClient = {
+                  type: 'game_state_update',
+                  traceId: mkTrace(),
+                  ts: nowIso(),
+                  tableId,
+                  delta: {
+                    phase: 'play',
+                    players: {
+                      [playerId]: { hand: playerHand }
+                    } as any
+                  }
+                };
+                c.ws.send(JSON.stringify(updateMsg));
+              }
+            } else {
+              // Broadcast new state after a brief delay
+              setTimeout(() => broadcastCharlestonState(tableId), 500);
+            }
           }
         }
         
@@ -1178,37 +1177,7 @@ export function startServer(port = 8080) {
         return;
       }
 
-      if (msg.type === 'charleston_courtesy') {
-        const { tableId, tiles, targetPlayer } = msg;
-        const table = tables.get(tableId);
-        
-        if (!table || !table.state || !table.state.charleston) {
-          return;
-        }
-        
-        const result = handleCourtesyProposal(
-          table.state,
-          client.playerId!,
-          tiles,
-          targetPlayer as 0 | 1 | 2 | 3
-        );
-        
-        if (!result.success) {
-          ws.send(JSON.stringify({
-            type: 'action_result',
-            traceId: mkTrace(),
-            ts: nowIso(),
-            tableId,
-            ok: false,
-            error: { code: 'invalid_courtesy', message: result.error }
-          } as ServerToClient));
-          return;
-        }
-        
-        // Broadcast updated state
-        broadcastCharlestonState(tableId);
-        return;
-      }
+      // courtesy pass removed
     });
   });
 

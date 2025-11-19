@@ -41,7 +41,6 @@ export function getPassTarget(fromPlayer: PlayerId, phase: CharlestonPhase): Pla
     'pass-across-2': 2,   // Same as pass-across
     'pass-right-2': 1,    // Same as pass-right
     'vote': 0,            // Not applicable
-    'courtesy': 0,        // Directed by player
     'complete': 0         // Not applicable
   };
   
@@ -61,7 +60,6 @@ export function getPassSource(toPlayer: PlayerId, phase: CharlestonPhase): Playe
     'pass-across-2': 2,
     'pass-right-2': 3,
     'vote': 0,
-    'courtesy': 0,
     'complete': 0
   };
   
@@ -86,7 +84,7 @@ export function handleCharlestonSelection(
   const phase = charleston.phase;
   
   // Check if in a pass phase
-  if (phase === 'vote' || phase === 'courtesy' || phase === 'complete') {
+  if (phase === 'vote' || phase === 'complete') {
     return { success: false, error: 'Not in a pass phase' };
   }
   
@@ -148,10 +146,18 @@ export function handleCharlestonReady(
   
   // Validate they have selected tiles
   const phase = state.charleston.phase;
-  if (phase !== 'vote' && phase !== 'courtesy' && phase !== 'complete') {
+  if (phase !== 'vote' && phase !== 'complete') {
     if (playerState.selectedTiles.length === 0 && !playerState.blindPass?.enabled) {
       return { success: false, error: 'Must select tiles before marking ready' };
     }
+  }
+
+  // In vote phase, ensure a vote was chosen and lock it in
+  if (phase === 'vote') {
+    if (!playerState.vote) {
+      return { success: false, error: 'Must select a vote (yes/no) before ready' };
+    }
+    playerState.voteSubmitted = true; // Lock the vote when marking ready
   }
   
   playerState.ready = true;
@@ -177,7 +183,7 @@ export function executeCharlestonPass(state: GameState): GameState {
   const charleston = state.charleston;
   const phase = charleston.phase;
   
-  if (phase === 'vote' || phase === 'courtesy' || phase === 'complete') {
+  if (phase === 'vote' || phase === 'complete') {
     return state;
   }
   
@@ -392,15 +398,10 @@ function getNextPhase(currentPhase: CharlestonPhase): CharlestonPhase {
     'pass-left-2',
     'pass-across-2',
     'pass-right-2',
-    'courtesy',
     'complete'
   ];
-  
   const currentIndex = sequence.indexOf(currentPhase);
-  if (currentIndex === -1 || currentIndex === sequence.length - 1) {
-    return 'complete';
-  }
-  
+  if (currentIndex === -1 || currentIndex === sequence.length - 1) return 'complete';
   return sequence[currentIndex + 1];
 }
 
@@ -448,20 +449,14 @@ export function handleCharlestonVoteSubmit(
 /**
  * Check if voting is complete and tally results
  */
-export function tallyVotes(charleston: CharlestonState): { yes: number; no: number; complete: boolean } {
+export function tallyVotes(charleston: CharlestonState): { yes: number; no: number } {
   let yes = 0;
   let no = 0;
-  let submitted = 0;
-  
-  for (const playerState of Object.values(charleston.playerStates)) {
-    if (playerState.voteSubmitted && playerState.vote) {
-      submitted++;
-      if (playerState.vote === 'yes') yes++;
-      if (playerState.vote === 'no') no++;
-    }
+  for (const ps of Object.values(charleston.playerStates)) {
+    if (ps.vote === 'yes') yes++;
+    else if (ps.vote === 'no') no++;
   }
-  
-  return { yes, no, complete: submitted === 4 };
+  return { yes, no };
 }
 
 /**
@@ -476,11 +471,11 @@ export function processVoteResults(state: GameState): GameState {
   
   // Store vote results
   state.charleston.votes = { yes, no };
-  
-  // If 3+ players vote NO (don't want second Charleston), skip to courtesy pass
-  // Otherwise (3+ want it or split vote), proceed with second Charleston
-  if (no >= 1) {
-    state.charleston.phase = 'courtesy';
+  // If 3+ players vote NO (decline second Charleston), complete Charleston
+  // Otherwise proceed with second Charleston
+  if (no >= 3) {
+    state.charleston.phase = 'complete';
+    state.charleston.completed = true;
   } else {
     state.charleston.phase = 'pass-left-2';
   }
@@ -497,114 +492,7 @@ export function processVoteResults(state: GameState): GameState {
   return state;
 }
 
-/**
- * Handle courtesy pass proposal
- */
-export function handleCourtesyProposal(
-  state: GameState,
-  playerId: PlayerId,
-  tiles: Tile[],
-  targetPlayer: PlayerId
-): { success: boolean; error?: string } {
-  if (!state.charleston || state.charleston.phase !== 'courtesy') {
-    return { success: false, error: 'Not in courtesy pass phase' };
-  }
-  
-  if (tiles.length > 3) {
-    return { success: false, error: 'Cannot offer more than 3 tiles' };
-  }
-  
-  // Validate jokers
-  if (tiles.some(t => t === 'J')) {
-    return { success: false, error: 'Jokers cannot be passed' };
-  }
-  
-  // Validate tile ownership
-  const playerHand = state.players[playerId].hand;
-  for (const tile of tiles) {
-    if (!playerHand.includes(tile)) {
-      return { success: false, error: `Tile ${tile} not in hand` };
-    }
-  }
-  
-  // Update player state
-  state.charleston.playerStates[playerId].courtesyOffer = {
-    tiles,
-    targetPlayer
-  };
-  state.charleston.playerStates[playerId].selectedTiles = tiles;
-  
-  return { success: true };
-}
-
-/**
- * Execute courtesy pass
- */
-export function executeCourtesyPass(state: GameState): GameState {
-  if (!state.charleston || state.charleston.phase !== 'courtesy') {
-    return state;
-  }
-  
-  const newState = JSON.parse(JSON.stringify(state)) as GameState;
-  const charleston = newState.charleston!;
-  
-  // Find mutual trade agreements
-  const trades: Array<{ player1: PlayerId; player2: PlayerId }> = [];
-  
-  for (let pid = 0; pid < 4; pid++) {
-    const p1 = pid as PlayerId;
-    const offer1 = charleston.playerStates[p1].courtesyOffer;
-    
-    if (offer1 && offer1.tiles.length > 0) {
-      const p2 = offer1.targetPlayer;
-      const offer2 = charleston.playerStates[p2].courtesyOffer;
-      
-      // Check if it's a mutual trade
-      if (offer2 && offer2.targetPlayer === p1 && offer2.tiles.length === offer1.tiles.length) {
-        // Avoid duplicate trades
-        const alreadyTraded = trades.some(t => 
-          (t.player1 === p1 && t.player2 === p2) || 
-          (t.player1 === p2 && t.player2 === p1)
-        );
-        
-        if (!alreadyTraded) {
-          trades.push({ player1: p1, player2: p2 });
-        }
-      }
-    }
-  }
-  
-  // Execute trades
-  for (const trade of trades) {
-    const p1 = trade.player1;
-    const p2 = trade.player2;
-    
-    const tiles1 = charleston.playerStates[p1].courtesyOffer!.tiles;
-    const tiles2 = charleston.playerStates[p2].courtesyOffer!.tiles;
-    
-    // Remove tiles from hands
-    for (const tile of tiles1) {
-      const idx = newState.players[p1].hand.indexOf(tile);
-      if (idx >= 0) newState.players[p1].hand.splice(idx, 1);
-    }
-    
-    for (const tile of tiles2) {
-      const idx = newState.players[p2].hand.indexOf(tile);
-      if (idx >= 0) newState.players[p2].hand.splice(idx, 1);
-    }
-    
-    // Add tiles to hands
-    newState.players[p1].hand.push(...tiles2);
-    newState.players[p2].hand.push(...tiles1);
-  }
-  
-  // Mark Charleston as complete
-  charleston.phase = 'complete';
-  charleston.completed = true;
-  newState.phase = 'play'; // Move to play phase
-  
-  return newState;
-}
+// Courtesy pass removed: no proposal nor execution functions
 
 /**
  * Get instructions message for current phase
@@ -618,9 +506,7 @@ export function getPhaseInstructions(phase: CharlestonPhase): string {
     'pass-left-2': 'Pass 4: Select 3 tiles to pass LEFT',
     'pass-across-2': 'Pass 5: Select 3 tiles to pass ACROSS',
     'pass-right-2': 'Pass 6: Select 3 tiles to pass RIGHT (Blind Pass available)',
-    'courtesy': 'Courtesy Pass: Offer 0-3 tiles to trade with another player',
     'complete': 'Charleston complete!'
   };
-  
   return messages[phase] || '';
 }
