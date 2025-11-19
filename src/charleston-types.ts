@@ -20,7 +20,7 @@ export type CharlestonPlayerState = {
   ready: boolean;
   blindPass?: {
     enabled: boolean;
-    count: 1 | 2 | 3; // How many tiles to take from incoming
+    count: 0 | 1 | 2; // How many tiles to take from incoming (kept)
   };
   vote?: 'yes' | 'no';
   voteSubmitted?: boolean; // Whether vote has been locked in

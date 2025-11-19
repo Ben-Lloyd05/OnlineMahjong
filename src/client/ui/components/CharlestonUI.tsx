@@ -10,7 +10,7 @@ interface CharlestonUIProps {
   canBlindPass: boolean;
   passNumber: number;
   allPlayers: { playerId: number; username: string }[];
-  onSelectTiles: (tiles: string[], blindPass?: { enabled: boolean; count: 1 | 2 | 3 }) => void;
+  onSelectTiles: (tiles: string[], blindPass?: { enabled: boolean; count: 0 | 1 | 2 }) => void;
   onReady: () => void;
   onVote: (vote: 'yes' | 'no') => void;
   onCourtesyOffer: (tiles: string[], targetPlayer: number) => void;
@@ -34,7 +34,7 @@ export default function CharlestonUI({
 }: CharlestonUIProps) {
   const [selectedTiles, setSelectedTiles] = useState<string[]>([]);
   const [blindPassEnabled, setBlindPassEnabled] = useState(false);
-  const [blindPassCount, setBlindPassCount] = useState<1 | 2 | 3>(1);
+  const [blindPassCount, setBlindPassCount] = useState<0 | 1 | 2>(1);
   const [currentVote, setCurrentVote] = useState<'yes' | 'no' | null>(null);
   const [courtesyTarget, setCourtesyTarget] = useState<number | null>(null);
   const [showPassAnimation, setShowPassAnimation] = useState(false);
@@ -54,7 +54,7 @@ export default function CharlestonUI({
 
   const maxSelectableTiles = useMemo(() => {
     if (isCourtesyPhase) return 3;
-    if (blindPassEnabled) return 3 - blindPassCount;
+    if (blindPassEnabled) return blindPassCount; // Select X tiles, keep X from incoming
     return 3;
   }, [isCourtesyPhase, blindPassEnabled, blindPassCount]);
 
@@ -119,7 +119,7 @@ export default function CharlestonUI({
     if (isCourtesyPhase) return courtesyTarget !== null || selectedTiles.length === 0;
     if (isPassPhase) {
       if (blindPassEnabled) {
-        return selectedTiles.length === (3 - blindPassCount);
+        return selectedTiles.length === blindPassCount;
       }
       return selectedTiles.length === 3;
     }
@@ -225,9 +225,9 @@ export default function CharlestonUI({
               onChange={(e) => {
                 setBlindPassEnabled(e.target.checked);
                 if (e.target.checked) {
-                  const maxTiles = 3 - blindPassCount;
-                  if (selectedTiles.length > maxTiles) {
-                    setSelectedTiles(selectedTiles.slice(0, maxTiles));
+                  // When enabling blind pass, ensure selected count doesn't exceed current blindPassCount
+                  if (selectedTiles.length > blindPassCount) {
+                    setSelectedTiles(selectedTiles.slice(0, blindPassCount));
                   }
                 }
               }}
@@ -238,29 +238,29 @@ export default function CharlestonUI({
 
           {blindPassEnabled && (
             <div className="blind-pass-slider">
-              <label>Take {blindPassCount} tile{blindPassCount > 1 ? 's' : ''} from incoming pass:</label>
+              <label>Select {blindPassCount} tile{blindPassCount !== 1 ? 's' : ''} from your hand:</label>
               <input
                 type="range"
-                min="1"
-                max="3"
+                min="0"
+                max="2"
                 value={blindPassCount}
                 onChange={(e) => {
-                  const newCount = parseInt(e.target.value) as 1 | 2 | 3;
+                  const newCount = parseInt(e.target.value) as 0 | 1 | 2;
                   setBlindPassCount(newCount);
-                  const maxTiles = 3 - newCount;
-                  if (selectedTiles.length > maxTiles) {
-                    setSelectedTiles(selectedTiles.slice(0, maxTiles));
+                  // Clear selections if we have too many
+                  if (selectedTiles.length > newCount) {
+                    setSelectedTiles(selectedTiles.slice(0, newCount));
                   }
                 }}
                 disabled={yourState.ready}
               />
               <div className="slider-labels">
+                <span>0</span>
                 <span>1</span>
                 <span>2</span>
-                <span>3</span>
               </div>
               <p className="blind-pass-info">
-                You must select {3 - blindPassCount} tile{3 - blindPassCount !== 1 ? 's' : ''} from your hand
+                Keep {blindPassCount} random tile{blindPassCount !== 1 ? 's' : ''} from incoming, forward {3 - blindPassCount}
               </p>
             </div>
           )}
@@ -387,7 +387,7 @@ export default function CharlestonUI({
             {isVotePhase && 'Select your vote'}
             {isCourtesyPhase && 'Select a player to trade with (or No Trade)'}
             {isPassPhase && !blindPassEnabled && 'Select 3 tiles'}
-            {isPassPhase && blindPassEnabled && `Select ${3 - blindPassCount} tile${3 - blindPassCount !== 1 ? 's' : ''}`}
+            {isPassPhase && blindPassEnabled && `Select ${blindPassCount} tile${blindPassCount !== 1 ? 's' : ''}`}
           </p>
         )}
       </div>

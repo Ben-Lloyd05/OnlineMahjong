@@ -93,7 +93,7 @@ export type CharlestonSelectMsg = BaseMsg & {
   tiles: string[]; // Tiles selected to pass
   blindPass?: {
     enabled: boolean;
-    count: 1 | 2 | 3; // How many tiles to take from incoming
+    count: 0 | 1 | 2; // How many tiles to take from incoming
   };
 };
 
@@ -287,7 +287,7 @@ export type CharlestonPlayerState = {
   ready: boolean;
   blindPass?: {
     enabled: boolean;
-    count: 1 | 2 | 3;
+    count: 0 | 1 | 2;
   };
   vote?: 'yes' | 'no';
   courtesyOffer?: {
