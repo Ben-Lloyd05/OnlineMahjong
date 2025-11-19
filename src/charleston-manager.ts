@@ -477,11 +477,12 @@ export function processVoteResults(state: GameState): GameState {
   // Store vote results
   state.charleston.votes = { yes, no };
   
-  // Majority vote (>=3 yes votes) means second Charleston happens
-  if (yes >= 3) {
-    state.charleston.phase = 'pass-left-2';
-  } else {
+  // If 3+ players vote NO (don't want second Charleston), skip to courtesy pass
+  // Otherwise (3+ want it or split vote), proceed with second Charleston
+  if (no >= 1) {
     state.charleston.phase = 'courtesy';
+  } else {
+    state.charleston.phase = 'pass-left-2';
   }
   
   // Reset player states
