@@ -200,6 +200,126 @@ export function validateMove(state: GameState, move: Move): ValidationResult {
   const player = state.players[move.player];
   
   switch (move.type) {
+    case 'selectHand':
+      if (state.phase !== 'play') {
+        return {
+          valid: false,
+          error: {
+            code: 'invalid_phase',
+            message: 'Can only select hand during play phase'
+          }
+        };
+      }
+      if (move.handIndex < 0 || move.handIndex >= state.options.ruleCard.patterns.length) {
+        return {
+          valid: false,
+          error: {
+            code: 'invalid_hand_index',
+            message: 'Invalid hand index'
+          }
+        };
+      }
+      break;
+      
+    case 'drawTile':
+      if (state.phase !== 'play') {
+        return {
+          valid: false,
+          error: {
+            code: 'invalid_phase',
+            message: 'Can only draw during play phase'
+          }
+        };
+      }
+      if (move.player !== state.currentPlayer) {
+        return {
+          valid: false,
+          error: {
+            code: 'not_your_turn',
+            message: 'Not your turn'
+          }
+        };
+      }
+      if (state.wallIndex >= state.wall.length) {
+        return {
+          valid: false,
+          error: {
+            code: 'wall_empty',
+            message: 'No tiles left in wall'
+          }
+        };
+      }
+      break;
+      
+    case 'discardTile':
+      if (state.phase !== 'play') {
+        return {
+          valid: false,
+          error: {
+            code: 'invalid_phase',
+            message: 'Can only discard during play phase'
+          }
+        };
+      }
+      if (move.player !== state.currentPlayer) {
+        return {
+          valid: false,
+          error: {
+            code: 'not_your_turn',
+            message: 'Not your turn'
+          }
+        };
+      }
+      const ownership = validateTileOwnership(player.hand, [move.tile]);
+      if (!ownership.valid) return ownership;
+      break;
+      
+    case 'claimDiscard':
+      if (state.phase !== 'play') {
+        return {
+          valid: false,
+          error: {
+            code: 'invalid_phase',
+            message: 'Can only claim during play phase'
+          }
+        };
+      }
+      if (!state.currentDiscard) {
+        return {
+          valid: false,
+          error: {
+            code: 'no_discard_to_claim',
+            message: 'No tile available to claim'
+          }
+        };
+      }
+      if (move.player === state.currentDiscard.player) {
+        return {
+          valid: false,
+          error: {
+            code: 'cannot_claim_own',
+            message: 'Cannot claim your own discard'
+          }
+        };
+      }
+      // Validate exposure tiles ownership
+      const exposureOwnership = validateTileOwnership(player.hand, move.exposureTiles);
+      if (!exposureOwnership.valid) return exposureOwnership;
+      
+      // Validate joker restriction
+      const allTiles = [state.currentDiscard.tile, ...move.exposureTiles];
+      const jokerCount = allTiles.filter(t => t === 'J').length;
+      if (jokerCount > 0 && allTiles.length < 3) {
+        return {
+          valid: false,
+          error: {
+            code: 'invalid_joker_usage',
+            message: 'Jokers can only be used in groups of 3 or more tiles'
+          }
+        };
+      }
+      break;
+      
     case 'draw':
       if (state.wall.length === 0) {
         return {
@@ -231,8 +351,8 @@ export function validateMove(state: GameState, move: Move): ValidationResult {
           }
         };
       }
-      const ownership = validateTileOwnership(player.hand, [move.tile]);
-      if (!ownership.valid) return ownership;
+      const tileOwnership = validateTileOwnership(player.hand, [move.tile]);
+      if (!tileOwnership.valid) return tileOwnership;
       break;
       
     case 'claim':
@@ -263,6 +383,85 @@ export function validateMove(state: GameState, move: Move): ValidationResult {
         const exposureResult = validateExposure(move.meld, state, isOpen);
         if (!exposureResult.valid) return exposureResult;
       break;
+      
+      case 'exchangeJoker':
+        if (state.phase !== 'play') {
+          return {
+            valid: false,
+            error: {
+              code: 'invalid_phase',
+              message: 'Can only exchange jokers during play phase'
+            }
+          };
+        }
+      
+        // Validate target player
+        const targetPlayer = state.players[move.targetPlayer];
+        if (!targetPlayer) {
+          return {
+            valid: false,
+            error: {
+              code: 'invalid_target',
+              message: 'Invalid target player'
+            }
+          };
+        }
+      
+        // Validate exposure index
+        if (move.exposureIndex < 0 || move.exposureIndex >= targetPlayer.exposures.length) {
+          return {
+            valid: false,
+            error: {
+              code: 'invalid_exposure',
+              message: 'Invalid exposure index'
+            }
+          };
+        }
+      
+        const targetExposure = targetPlayer.exposures[move.exposureIndex];
+      
+        // Validate joker index
+        if (move.jokerIndex < 0 || move.jokerIndex >= targetExposure.tiles.length) {
+          return {
+            valid: false,
+            error: {
+              code: 'invalid_joker_index',
+              message: 'Invalid joker position'
+            }
+          };
+        }
+      
+        // Validate that there's actually a joker at that position
+        if (targetExposure.tiles[move.jokerIndex] !== 'J') {
+          return {
+            valid: false,
+            error: {
+              code: 'no_joker_at_position',
+              message: 'No joker at specified position'
+            }
+          };
+        }
+      
+        // Validate player has the replacement tile
+        const replacementOwnership = validateTileOwnership(player.hand, [move.replacementTile]);
+        if (!replacementOwnership.valid) return replacementOwnership;
+      
+        // Validate replacement tile is not a joker
+        if (move.replacementTile === 'J') {
+          return {
+            valid: false,
+            error: {
+              code: 'invalid_replacement',
+              message: 'Cannot exchange joker for another joker'
+            }
+          };
+        }
+      
+        // Validate replacement tile matches the pattern
+        // The joker should be replaceable by a natural tile that fits the exposure
+        // For simplicity, we allow any natural tile for now
+        // TODO: Add stricter pattern matching validation
+        break;
   }
   
   return { valid: true };

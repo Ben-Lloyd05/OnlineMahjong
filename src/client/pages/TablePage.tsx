@@ -5,6 +5,14 @@ import RuleCardSelector from '../ui/components/RuleCardSelector';
 import { SeatingSquare } from '../ui/components/SeatingSquare';
 import { GamePausedOverlay } from '../ui/components/GamePausedOverlay';
 import CharlestonUI from '../ui/components/CharlestonUI';
+import { HandSelector } from '../ui/components/HandSelector';
+import { SelectedHandDisplay } from '../ui/components/SelectedHandDisplay';
+import { Exposures } from '../ui/components/Exposures';
+import LegalHandsModal from '../ui/components/LegalHandsModal';
+import JokerExchangeModal from '../ui/components/JokerExchangeModal';
+import { DiscardPile } from '../ui/components/DiscardPile';
+// Correct path to root JSON file (4 levels up from this file's directory)
+import handsData from '../../../nmjl_mahjong_hands_filled.json';
 import { ServerToClient } from '../../server/ws/protocol';
 
 interface TablePageProps {
@@ -23,6 +31,22 @@ export default function TablePage({ messages, onLeaveTable, onJoinTable, onSendM
   const hasReconnectedRef = React.useRef(false); // Track if we've already attempted reconnection
   const [currentHand, setCurrentHand] = React.useState<string[]>([]); // Track current hand through Charleston
   const processedCharlestonPassesRef = React.useRef<Set<string>>(new Set()); // Track processed Charleston passes
+
+  // Gameplay state
+  const [isHandSelectorOpen, setIsHandSelectorOpen] = React.useState(false);
+  const [selectedHandInfo, setSelectedHandInfo] = React.useState<{
+    index: number;
+    name: string;
+    category: string;
+    sections: string[];
+  } | null>(null);
+  const [selectedTilesForClaim, setSelectedTilesForClaim] = React.useState<string[]>([]);
+  const [isClaimWindowOpen, setIsClaimWindowOpen] = React.useState(false);
+  const [currentClaimableTile, setCurrentClaimableTile] = React.useState<string | null>(null);
+  const [showHandsModal, setShowHandsModal] = React.useState(false);
+  const [showJokerModal, setShowJokerModal] = React.useState(false);
+  const [jokerCtx, setJokerCtx] = React.useState<{ targetPlayer: number; exposureIndex: number; jokerIndex: number } | null>(null);
+  const [jokerExchangeLoading, setJokerExchangeLoading] = React.useState(false);
 
   // Mark WebSocket as ready after a short delay (ensures connection is established)
   React.useEffect(() => {
@@ -204,6 +228,291 @@ export default function TablePage({ messages, onLeaveTable, onJoinTable, onSendM
     return null;
   }, [messages, inviteCode]);
 
+  // Gameplay phase info
+  const gameplayPhase = useMemo(() => {
+    const joinMsg = messages.find((m: any) => 
+      (m.type === 'table_created' || m.type === 'table_joined') && 
+      m.inviteCode === inviteCode
+    ) as any;
+    const currentTableId = joinMsg?.tableId;
+    if (!currentTableId) return null;
+
+    // Check if we're in play phase
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const msg = messages[i] as any;
+      if (msg.type === 'game_state_update' && msg.tableId === currentTableId) {
+        if (msg.delta?.phase === 'play' || msg.full?.phase === 'play') {
+          return 'play';
+        }
+      }
+    }
+    return null;
+  }, [messages, inviteCode]);
+
+  // Get current turn info
+  const turnInfo = useMemo(() => {
+    const joinMsg = messages.find((m: any) => 
+      (m.type === 'table_created' || m.type === 'table_joined') && 
+      m.inviteCode === inviteCode
+    ) as any;
+    const currentTableId = joinMsg?.tableId;
+    if (!currentTableId) return null;
+
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const msg = messages[i] as any;
+      if (msg.type === 'turn_start' && msg.tableId === currentTableId) {
+        return msg;
+      }
+    }
+    return null;
+  }, [messages, inviteCode]);
+
+  // Get discard pile
+  const discardPile = useMemo(() => {
+    const joinMsg = messages.find((m: any) => 
+      (m.type === 'table_created' || m.type === 'table_joined') && 
+      m.inviteCode === inviteCode
+    ) as any;
+    const currentTableId = joinMsg?.tableId;
+    if (!currentTableId) return [];
+
+    const discards: { player: number; tile: string }[] = [];
+    for (const msg of messages) {
+      const m = msg as any;
+      if (m.type === 'tile_discarded' && m.tableId === currentTableId) {
+        discards.push({ player: m.player, tile: m.tile });
+      }
+    }
+    return discards;
+  }, [messages, inviteCode]);
+
+  // Get current claim window
+  const claimWindowInfo = useMemo(() => {
+    const joinMsg = messages.find((m: any) => 
+      (m.type === 'table_created' || m.type === 'table_joined') && 
+      m.inviteCode === inviteCode
+    ) as any;
+    const currentTableId = joinMsg?.tableId;
+    if (!currentTableId) return null;
+
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const msg = messages[i] as any;
+      if (msg.type === 'claim_window' && msg.tableId === currentTableId) {
+        // Check if still valid
+        if (msg.expiresAt > Date.now()) {
+          return msg;
+        }
+      }
+    }
+    return null;
+  }, [messages, inviteCode]);
+
+  // Get exposures for all players
+  const playerExposures = useMemo(() => {
+    const joinMsg = messages.find((m: any) => 
+      (m.type === 'table_created' || m.type === 'table_joined') && 
+      m.inviteCode === inviteCode
+    ) as any;
+    const currentTableId = joinMsg?.tableId;
+    if (!currentTableId) return { 0: [], 1: [], 2: [], 3: [] };
+
+    const exposures: { [key: number]: any[] } = { 0: [], 1: [], 2: [], 3: [] };
+    for (const msg of messages) {
+      const m = msg as any;
+      if (m.type === 'claim_made' && m.tableId === currentTableId) {
+        exposures[m.player].push({
+          tiles: m.exposedTiles,
+          claimedTile: m.claimedTile
+        });
+      }
+      if (m.type === 'joker_exchanged' && m.tableId === currentTableId) {
+        const { targetPlayer, exposureIndex, jokerIndex, replacementTile } = m;
+        if (exposures[targetPlayer] && exposures[targetPlayer][exposureIndex]) {
+          // Replace joker with natural tile in stored exposure tiles
+          exposures[targetPlayer][exposureIndex].tiles[jokerIndex] = replacementTile;
+        }
+      }
+    }
+    return exposures;
+  }, [messages, inviteCode]);
+
+  const handleSendJokerExchange = React.useCallback((replacementTile: string) => {
+    if (!jokerCtx) return;
+    const joinMsg = messages.find((m: any) => 
+      (m.type === 'table_created' || m.type === 'table_joined') && 
+      m.inviteCode === inviteCode
+    ) as any;
+    const tableId = joinMsg?.tableId;
+    if (!tableId || !gameStartInfo) return;
+    setJokerExchangeLoading(true);
+    const ts = new Date().toISOString();
+    const traceId = (globalThis.crypto && 'randomUUID' in globalThis.crypto) ? (globalThis.crypto as any).randomUUID() : Math.random().toString(36).slice(2);
+    onSendMessage({
+      type: 'exchange_joker',
+      traceId,
+      ts,
+      tableId,
+      targetPlayer: jokerCtx.targetPlayer,
+      exposureIndex: jokerCtx.exposureIndex,
+      jokerIndex: jokerCtx.jokerIndex,
+      replacementTile
+    });
+    // Close modal optimistically; will refresh on broadcast
+    setTimeout(() => {
+      setJokerExchangeLoading(false);
+      setShowJokerModal(false);
+      setJokerCtx(null);
+    }, 300);
+  }, [jokerCtx, messages, inviteCode, onSendMessage, gameStartInfo]);
+
+  // Gameplay handlers
+  const handleSelectHand = React.useCallback((handIndex: number, handName: string, category: string) => {
+    const joinMsg = messages.find((m: any) => 
+      (m.type === 'table_created' || m.type === 'table_joined') && 
+      m.inviteCode === inviteCode
+    ) as any;
+    const tableId = joinMsg?.tableId;
+    if (!tableId) return;
+
+    // Find sections from handsData
+    const categories = Object.keys(handsData);
+    let sections: string[] = [];
+    for (const cat of categories) {
+      const hands = handsData[cat as keyof typeof handsData];
+      for (const [name, sec] of Object.entries(hands)) {
+        if (name === handName && cat === category) {
+          sections = sec as string[];
+          break;
+        }
+      }
+    }
+
+    setSelectedHandInfo({ index: handIndex, name: handName, category, sections });
+    
+    onSendMessage({
+      type: 'select_hand',
+      tableId,
+      handIndex,
+      traceId: crypto.randomUUID(),
+      ts: new Date().toISOString()
+    });
+  }, [messages, inviteCode, onSendMessage]);
+
+  const handleDrawTile = React.useCallback(() => {
+    const joinMsg = messages.find((m: any) => 
+      (m.type === 'table_created' || m.type === 'table_joined') && 
+      m.inviteCode === inviteCode
+    ) as any;
+    const tableId = joinMsg?.tableId;
+    if (!tableId) return;
+
+    onSendMessage({
+      type: 'draw_tile',
+      tableId,
+      traceId: crypto.randomUUID(),
+      ts: new Date().toISOString()
+    });
+  }, [messages, inviteCode, onSendMessage]);
+
+  const handleDiscardTile = React.useCallback((tile: string) => {
+    const joinMsg = messages.find((m: any) => 
+      (m.type === 'table_created' || m.type === 'table_joined') && 
+      m.inviteCode === inviteCode
+    ) as any;
+    const tableId = joinMsg?.tableId;
+    if (!tableId) return;
+
+    // Remove tile from current hand
+    setCurrentHand(prev => {
+      const newHand = [...prev];
+      const idx = newHand.indexOf(tile);
+      if (idx !== -1) newHand.splice(idx, 1);
+      return newHand;
+    });
+
+    onSendMessage({
+      type: 'discard_tile',
+      tableId,
+      tile,
+      traceId: crypto.randomUUID(),
+      ts: new Date().toISOString()
+    });
+  }, [messages, inviteCode, onSendMessage]);
+
+  const handleClaimDiscard = React.useCallback(() => {
+    const joinMsg = messages.find((m: any) => 
+      (m.type === 'table_created' || m.type === 'table_joined') && 
+      m.inviteCode === inviteCode
+    ) as any;
+    const tableId = joinMsg?.tableId;
+    if (!tableId) return;
+
+    onSendMessage({
+      type: 'claim_discard',
+      tableId,
+      exposureTiles: selectedTilesForClaim,
+      traceId: crypto.randomUUID(),
+      ts: new Date().toISOString()
+    });
+
+    // Clear claim state
+    setSelectedTilesForClaim([]);
+    setIsClaimWindowOpen(false);
+  }, [messages, inviteCode, onSendMessage, selectedTilesForClaim]);
+
+  const handlePassClaim = React.useCallback(() => {
+    const joinMsg = messages.find((m: any) => 
+      (m.type === 'table_created' || m.type === 'table_joined') && 
+      m.inviteCode === inviteCode
+    ) as any;
+    const tableId = joinMsg?.tableId;
+    if (!tableId) return;
+
+    onSendMessage({
+      type: 'pass_claim',
+      tableId,
+      traceId: crypto.randomUUID(),
+      ts: new Date().toISOString()
+    });
+
+    setIsClaimWindowOpen(false);
+  }, [messages, inviteCode, onSendMessage]);
+
+  // Listen for claim windows
+  React.useEffect(() => {
+    if (claimWindowInfo && gameStartInfo) {
+      // Don't show claim window for your own discards
+      if (claimWindowInfo.discardedBy !== gameStartInfo.yourPlayerId) {
+        setIsClaimWindowOpen(true);
+        setCurrentClaimableTile(claimWindowInfo.discardedTile);
+      }
+    } else {
+      setIsClaimWindowOpen(false);
+      setCurrentClaimableTile(null);
+    }
+  }, [claimWindowInfo, gameStartInfo]);
+
+  // Listen for tile draws
+  React.useEffect(() => {
+    const joinMsg = messages.find((m: any) => 
+      (m.type === 'table_created' || m.type === 'table_joined') && 
+      m.inviteCode === inviteCode
+    ) as any;
+    const currentTableId = joinMsg?.tableId;
+    if (!currentTableId || !gameStartInfo) return;
+
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const msg = messages[i] as any;
+      if (msg.type === 'tile_drawn' && msg.tableId === currentTableId && msg.player === gameStartInfo.yourPlayerId && msg.tile) {
+        // Add drawn tile to hand if not already there
+        if (!currentHand.includes(msg.tile)) {
+          setCurrentHand(prev => [...prev, msg.tile]);
+        }
+        break;
+      }
+    }
+  }, [messages, inviteCode, gameStartInfo, currentHand]);
+
   // Get storage key for tile order
   const getTileOrderStorageKey = React.useCallback(() => {
     const joinMsg = messages.find((m: any) => 
@@ -360,12 +669,17 @@ export default function TablePage({ messages, onLeaveTable, onJoinTable, onSendM
       console.log('[TablePage] No allPlayers data available, returning empty array');
       return [];
     }
+          <LegalHandsModal isOpen={showHandsModal} onClose={() => setShowHandsModal(false)} />
     
     console.log('[TablePage] Building seating square with allPlayers:', allPlayers);
     
     // Calculate relative positions for each player
     // You are always at bottom, others arranged clockwise
     return allPlayers.map((player: any) => {
+              <button
+                onClick={() => setShowHandsModal(true)}
+                className="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 rounded text-sm font-semibold shadow shadow-emerald-900/50"
+              >View Hands</button>
       const seatPos = player.seatPosition ?? player.playerId;
       // Calculate relative position from your perspective
       const relativePos = (seatPos - yourPosition + 4) % 4;
@@ -590,25 +904,34 @@ export default function TablePage({ messages, onLeaveTable, onJoinTable, onSendM
   // Game has started - show table with Charleston integration
   return (
     <div className="min-h-screen" style={charlestonInfo ? { 
-      background: 'linear-gradient(to bottom right, rgb(22, 101, 52), rgb(21, 128, 61))',
+      background: 'linear-gradient(135deg, #1a3a2e 0%, #0f2419 100%)',
       padding: 0,
       margin: 0
-    } : { padding: '1rem', gap: '1rem', display: 'flex', flexDirection: 'column' }}>
+    } : { 
+      background: 'linear-gradient(135deg, #1a3a2e 0%, #0f2419 100%)',
+      padding: '1rem', 
+      gap: '1rem', 
+      display: 'flex', 
+      flexDirection: 'column' 
+    }}>
       
       {/* Room code in top left - always visible */}
       <div style={{ 
         position: 'absolute', 
         top: '1rem', 
         left: '1rem', 
-        color: 'white',
-        background: 'rgba(0, 0, 0, 0.3)',
-        padding: '0.5rem 1rem',
-        borderRadius: '8px',
+        color: '#d4af37',
+        background: 'linear-gradient(135deg, rgba(30, 90, 61, 0.9), rgba(15, 61, 42, 0.9))',
+        padding: '0.75rem 1.25rem',
+        borderRadius: '12px',
         fontSize: '0.875rem',
-        fontWeight: '600',
-        zIndex: 10
+        fontWeight: '700',
+        zIndex: 10,
+        border: '2px solid rgba(212, 175, 55, 0.3)',
+        boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
+        letterSpacing: '0.5px'
       }}>
-        Room Code: <span style={{ fontFamily: 'monospace', fontSize: '1.25rem' }}>{currentInviteCode}</span>
+        Room Code: <span style={{ fontFamily: 'monospace', fontSize: '1.25rem', color: '#4ade80' }}>{currentInviteCode}</span>
       </div>
       
       {/* Charleston Header - shown at top during Charleston */}
@@ -705,6 +1028,8 @@ export default function TablePage({ messages, onLeaveTable, onJoinTable, onSendM
             yourHand={currentHand.length > 0 ? currentHand : gameStartInfo.yourHand}
             hideBottomHand={!!charlestonInfo}
             onReorderHand={handleReorderHand}
+            onTileClick={turnInfo && turnInfo.action === 'discard' && turnInfo.currentPlayer === gameStartInfo.yourPlayerId ? handleDiscardTile : undefined}
+            allowTileClick={turnInfo && turnInfo.action === 'discard' && turnInfo.currentPlayer === gameStartInfo.yourPlayerId}
           />
         </div>
       )}
@@ -728,6 +1053,165 @@ export default function TablePage({ messages, onLeaveTable, onJoinTable, onSendM
           />
         </div>
       )}
+
+      {/* Gameplay Phase UI */}
+      {gameplayPhase === 'play' && !charlestonInfo && (
+        <div className="max-w-6xl mx-auto space-y-4">
+          {/* Hand Selector Button */}
+          {!selectedHandInfo && (
+            <div className="text-center">
+              <button
+                onClick={() => setIsHandSelectorOpen(true)}
+                className="px-8 py-4 bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 text-white font-bold rounded-lg shadow-lg text-xl transition-all hover:scale-105 hover:shadow-emerald-500/50"
+                style={{ animation: 'pulse 2s ease-in-out infinite' }}
+              >
+                📋 Select Your Hand
+              </button>
+            </div>
+          )}
+
+          {/* Selected Hand Display */}
+          {selectedHandInfo && (
+            <SelectedHandDisplay
+              handName={selectedHandInfo.name}
+              category={selectedHandInfo.category}
+              sections={selectedHandInfo.sections}
+            />
+          )}
+
+          {/* Turn Indicator */}
+          {turnInfo && (
+            <div className={`p-4 rounded-lg text-center font-bold text-lg transition-all ${
+              turnInfo.currentPlayer === gameStartInfo.yourPlayerId
+                ? 'bg-gradient-to-r from-emerald-900 to-emerald-800 border-2 border-emerald-500 text-emerald-100 shadow-lg shadow-emerald-500/50'
+                : 'bg-gradient-to-r from-gray-800 to-gray-900 border-2 border-gray-600 text-gray-300'
+            }`}>
+              {turnInfo.currentPlayer === gameStartInfo.yourPlayerId ? (
+                <>
+                  🎯 Your Turn - {turnInfo.action === 'draw' ? 'Draw a Tile' : 'Discard a Tile'}
+                </>
+              ) : (
+                <>
+                  ⏳ Waiting for Player {turnInfo.currentPlayer}
+                </>
+              )}
+            </div>
+          )}
+
+          {/* Action Buttons */}
+          {turnInfo && turnInfo.currentPlayer === gameStartInfo.yourPlayerId && (
+            <div className="flex justify-center gap-4">
+              {turnInfo.action === 'draw' && (
+                <button
+                  onClick={handleDrawTile}
+                  className="px-8 py-4 bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 text-white font-bold rounded-lg shadow-lg text-xl transition-all hover:scale-105 hover:shadow-emerald-500/50"
+                >
+                  🎴 Draw Tile
+                </button>
+              )}
+              {turnInfo.action === 'discard' && (
+                <div className="text-center">
+                  <p className="text-emerald-300 mb-2 font-semibold">Click a tile in your hand to discard it</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Claim Window */}
+          {isClaimWindowOpen && currentClaimableTile && (
+            <div className="fixed inset-0 bg-black bg-opacity-80 backdrop-blur-sm flex items-center justify-center z-50 animate-fadeIn">
+              <div className="bg-gradient-to-br from-gray-900 to-gray-800 border-2 border-emerald-600 rounded-lg shadow-2xl p-6 max-w-md w-full">
+                <h3 className="text-2xl font-bold mb-4 text-emerald-400">Claim Opportunity!</h3>
+                <div className="mb-4">
+                  <p className="text-gray-200 mb-2">Available tile: <span className="font-mono font-bold text-yellow-400 text-lg">{currentClaimableTile}</span></p>
+                  <p className="text-sm text-gray-400">Select tiles from your hand to expose with this tile (minimum 3 tiles total if using jokers)</p>
+                </div>
+                
+                <div className="mb-4">
+                  <div className="flex flex-wrap gap-2">
+                    {currentHand.map((tile, idx) => (
+                      <button
+                        key={idx}
+                        onClick={() => {
+                          setSelectedTilesForClaim(prev =>
+                            prev.includes(tile)
+                              ? prev.filter(t => t !== tile)
+                              : [...prev, tile]
+                          );
+                        }}
+                        className={`px-3 py-2 rounded font-mono font-bold transition-all ${
+                          selectedTilesForClaim.includes(tile)
+                            ? 'bg-emerald-500 text-white scale-105 shadow-lg shadow-emerald-500/50'
+                            : 'bg-gray-700 hover:bg-gray-600 text-gray-200 border border-gray-600'
+                        }`}
+                      >
+                        {tile}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex gap-3">
+                  <button
+                    onClick={handleClaimDiscard}
+                    disabled={selectedTilesForClaim.length === 0}
+                    className="flex-1 px-4 py-2 bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 disabled:from-gray-600 disabled:to-gray-700 disabled:cursor-not-allowed text-white font-bold rounded-lg transition-all"
+                  >
+                    Claim ({selectedTilesForClaim.length + 1} tiles)
+                  </button>
+                  <button
+                    onClick={handlePassClaim}
+                    className="flex-1 px-4 py-2 bg-gradient-to-r from-gray-700 to-gray-800 hover:from-gray-600 hover:to-gray-700 text-white font-bold rounded-lg transition-all"
+                  >
+                    Pass
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Discard Pile */}
+          <DiscardPile
+            discards={discardPile}
+            currentDiscard={claimWindowInfo ? { player: claimWindowInfo.discardedBy, tile: claimWindowInfo.discardedTile } : null}
+          />
+
+          {/* Exposures for all players (including self; jokers clickable only on others) */}
+          {gameStartInfo && (
+            <div className="mt-6 space-y-4">
+              {[0,1,2,3].map(pid => (
+                <Exposures
+                  key={pid}
+                  exposures={playerExposures[pid]}
+                  ownerPlayerId={pid}
+                  currentPlayerId={gameStartInfo.yourPlayerId}
+                  onJokerClick={(ctx) => {
+                    // Ensure we have tiles in hand to exchange
+                    if (currentHand.filter(t => t !== 'J').length === 0) return;
+                    setJokerCtx(ctx);
+                    setShowJokerModal(true);
+                  }}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+      <JokerExchangeModal
+        isOpen={showJokerModal}
+        onClose={() => { if(!jokerExchangeLoading){ setShowJokerModal(false); setJokerCtx(null);} }}
+        context={jokerCtx}
+        handTiles={currentHand}
+        onConfirm={handleSendJokerExchange}
+        loading={jokerExchangeLoading}
+      />
+
+      {/* Hand Selector Modal */}
+      <HandSelector
+        isOpen={isHandSelectorOpen}
+        onClose={() => setIsHandSelectorOpen(false)}
+        onSelectHand={handleSelectHand}
+      />
       
       {/* Game Paused Overlay */}
       {gamePauseInfo && (

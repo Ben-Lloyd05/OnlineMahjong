@@ -2,6 +2,7 @@
 import { WebSocketServer } from 'ws';
 import { randomUUID, randomBytes } from 'crypto';
 import { ClientToServer, ServerToClient, nowIso, PlayerInfo } from './protocol';
+import { Move, PlayerId } from '../../types';
 import { createGame, applyMove, getGameState } from '../../engine';
 import { load2024RuleCard } from '../../rulecard-parser';
 import { commitServerSeed } from '../../fairness';
@@ -56,6 +57,13 @@ type TableEntry = {
   gameStarted?: boolean; // Track if game has started (hands dealt)
   paused?: boolean; // Track if game is paused due to disconnections
   playerSessions: Map<number, PlayerSession>; // Track all player sessions for reconnection
+  claimWindow?: { // Track active claim window - first claim wins
+    discardedTile: string;
+    discardedBy: number;
+    expiresAt: number;
+    firstClaimReceived: boolean;
+    timeoutId?: NodeJS.Timeout;
+  };
   seeds: {
     serverSecret: string; // per-table random secret
     clientSeed: string;   // client-provided or server-generated
@@ -100,6 +108,16 @@ function broadcast(tableId: string, msg: ServerToClient) {
   if (!table) return;
   for (const c of table.clients) {
     c.ws.send(JSON.stringify(msg));
+  }
+}
+
+function broadcastExcept(tableId: string, excludeClient: Client, msg: ServerToClient) {
+  const table = tables.get(tableId);
+  if (!table) return;
+  for (const c of table.clients) {
+    if (c !== excludeClient) {
+      c.ws.send(JSON.stringify(msg));
+    }
   }
 }
 
@@ -271,8 +289,18 @@ function startGameForTable(tableId: string) {
   table.state = createGame(table.seeds.clientSeed, table.seeds.serverSecret, dealer);
   table.gameStarted = true;
   
-  // Initialize Charleston
-  table.state = initializeCharleston(table.state);
+  // Optionally skip Charleston entirely for special test runs.
+  // Set SKIP_CHARLESTON=1 (or 'true') when starting the server to begin
+  // directly in normal gameplay phase. This is used by automation scripts
+  // that want to observe real play without any tile passing.
+  const skipCharleston = process.env.SKIP_CHARLESTON === '1' || process.env.SKIP_CHARLESTON === 'true';
+  if (skipCharleston) {
+    console.log('[Server] SKIP_CHARLESTON enabled: starting game without Charleston phase');
+    table.state.phase = 'play';
+  } else {
+    // Initialize Charleston normally
+    table.state = initializeCharleston(table.state);
+  }
   
   // Assign seat positions based on join order (playerId already reflects this)
   // and create PlayerInfo array
@@ -308,8 +336,10 @@ function startGameForTable(tableId: string) {
     client.ws.send(JSON.stringify(msg));
   }
   
-  // Send initial Charleston state
-  broadcastCharlestonState(tableId);
+  // If Charleston is active, broadcast its initial state
+  if (!skipCharleston) {
+    broadcastCharlestonState(tableId);
+  }
   
   console.log(`[Server] Game started for table ${tableId.slice(0, 8)}, dealer is Player ${dealer}`);
 }
@@ -1054,6 +1084,48 @@ export function startServer(port = 8080) {
                 tableId
               };
               broadcast(tableId, completeMsg);
+              
+              // Transition to play phase - initialize gameplay wall
+              table.state.phase = 'play';
+              
+              // Collect all dealt tiles
+              const dealtTiles: string[] = [];
+              for (let i = 0; i < 4; i++) {
+                dealtTiles.push(...table.state.players[i].hand);
+              }
+              
+              // Create full tile set
+              const { createAmericanMahjongTileSet } = require('../../tiles');
+              const allTiles = createAmericanMahjongTileSet();
+              
+              // Find remaining tiles (not dealt)
+              const remainingTiles = allTiles.filter((tile: string) => {
+                const countInDealt = dealtTiles.filter((t: string) => t === tile).length;
+                const countTotal = allTiles.filter((t: string) => t === tile).length;
+                return countInDealt < countTotal;
+              });
+              
+              // Shuffle remaining tiles for gameplay wall
+              const { DeterministicRNG } = require('../../rng');
+              const { createGameplayWall } = require('../../wall');
+              const rng = new DeterministicRNG(table.seeds.clientSeed, table.seeds.serverSecret);
+              
+              // Skip RNG to account for initial dealing
+              for (let i = 0; i < 200; i++) rng.nextInt(100);
+              
+              table.state.wall = createGameplayWall(remainingTiles, rng);
+              table.state.wallIndex = 0;
+              
+              // Dealer starts by discarding (they have 14 tiles)
+              broadcast(tableId, {
+                type: 'turn_start',
+                traceId: mkTrace(),
+                ts: nowIso(),
+                tableId,
+                currentPlayer: table.state.dealer,
+                action: 'discard'
+              } as ServerToClient);
+              
               // Transition to play
               for (const c of table.clients) {
                 const playerId = c.playerId!;
@@ -1065,6 +1137,7 @@ export function startServer(port = 8080) {
                   tableId,
                   delta: {
                     phase: 'play',
+                    currentPlayer: table.state.dealer,
                     players: {
                       [playerId]: { hand: playerHand }
                     } as any
@@ -1174,6 +1247,383 @@ export function startServer(port = 8080) {
         
         // Broadcast updated state (votes are live)
         broadcastCharlestonState(tableId);
+        return;
+      }
+
+      // Gameplay phase handlers
+      if (msg.type === 'select_hand') {
+        const { tableId, handIndex } = msg;
+        const table = tables.get(tableId);
+        
+        if (!table || !table.state || client.playerId === undefined) {
+          return;
+        }
+        
+        // Apply the move
+        const move: Move = { type: 'selectHand', player: client.playerId as PlayerId, handIndex };
+        const result = applyMove(table.state, move);
+        
+        if (result.error) {
+          ws.send(JSON.stringify({
+            type: 'action_result',
+            traceId: mkTrace(),
+            ts: nowIso(),
+            tableId,
+            ok: false,
+            error: { code: 'invalid_move', message: result.error.message }
+          } as ServerToClient));
+          return;
+        }
+        
+        table.state = result.state;
+        
+        // Broadcast hand selection to all players
+        const handName = table.state.options.ruleCard.patterns[handIndex]?.name || 'Unknown';
+        broadcast(tableId, {
+          type: 'hand_selected',
+          traceId: mkTrace(),
+          ts: nowIso(),
+          tableId,
+          player: client.playerId,
+          handIndex,
+          handName
+        });
+        
+        return;
+      }
+
+      if (msg.type === 'draw_tile') {
+        const { tableId } = msg;
+        const table = tables.get(tableId);
+        
+        if (!table || !table.state || client.playerId === undefined) {
+          return;
+        }
+        
+        // Apply the move
+        const move: Move = { type: 'drawTile', player: client.playerId as PlayerId };
+        const result = applyMove(table.state, move);
+        
+        if (result.error) {
+          ws.send(JSON.stringify({
+            type: 'action_result',
+            traceId: mkTrace(),
+            ts: nowIso(),
+            tableId,
+            ok: false,
+            error: { code: 'invalid_move', message: result.error.message }
+          } as ServerToClient));
+          return;
+        }
+        
+        table.state = result.state;
+        
+        // Get the drawn tile
+        const drawnTile = table.state.players[client.playerId].hand[table.state.players[client.playerId].hand.length - 1];
+        
+        // Send tile to player who drew
+        ws.send(JSON.stringify({
+          type: 'tile_drawn',
+          traceId: mkTrace(),
+          ts: nowIso(),
+          tableId,
+          player: client.playerId,
+          tile: drawnTile,
+          tilesRemaining: table.state.wall.length - table.state.wallIndex
+        } as ServerToClient));
+        
+        // Broadcast to others (without showing the tile)
+        broadcastExcept(tableId, client, {
+          type: 'tile_drawn',
+          traceId: mkTrace(),
+          ts: nowIso(),
+          tableId,
+          player: client.playerId,
+          tilesRemaining: table.state.wall.length - table.state.wallIndex
+        });
+        
+        // Check for draw condition or win
+        if (table.state.isDraw) {
+          broadcast(tableId, {
+            type: 'game_draw',
+            traceId: mkTrace(),
+            ts: nowIso(),
+            tableId,
+            reason: 'wall_exhausted'
+          });
+        } else if (table.state.winner !== undefined) {
+          const winner = table.state.winner;
+          broadcast(tableId, {
+            type: 'game_won',
+            traceId: mkTrace(),
+            ts: nowIso(),
+            tableId,
+            winner,
+            winningHand: [...table.state.players[winner].hand, ...table.state.players[winner].exposures.flatMap((e: any) => e.tiles)],
+            handPattern: table.state.players[winner].selectedHandIndex !== undefined 
+              ? table.state.options.ruleCard.patterns[table.state.players[winner].selectedHandIndex!]?.name || ''
+              : '',
+            points: 0,
+            payments: [],
+            breakdown: { basePoints: 0, patternPoints: 0, flowerBonus: 0, selfDrawBonus: 0, kongBonus: 0, penalties: 0 }
+          });
+        }
+        
+        return;
+      }
+
+      if (msg.type === 'discard_tile') {
+        const { tableId, tile } = msg;
+        const table = tables.get(tableId);
+        
+        if (!table || !table.state || client.playerId === undefined) {
+          return;
+        }
+        
+        // Apply the move
+        const move: Move = { type: 'discardTile', player: client.playerId as PlayerId, tile };
+        const result = applyMove(table.state, move);
+        
+        if (result.error) {
+          ws.send(JSON.stringify({
+            type: 'action_result',
+            traceId: mkTrace(),
+            ts: nowIso(),
+            tableId,
+            ok: false,
+            error: { code: 'invalid_move', message: result.error.message }
+          } as ServerToClient));
+          return;
+        }
+        
+        table.state = result.state;
+        
+        // Broadcast the discard
+        broadcast(tableId, {
+          type: 'tile_discarded',
+          traceId: mkTrace(),
+          ts: nowIso(),
+          tableId,
+          player: client.playerId,
+          tile,
+          canClaim: true
+        });
+        
+        // Clear any existing claim window
+        if (table.claimWindow?.timeoutId) {
+          clearTimeout(table.claimWindow.timeoutId);
+        }
+        
+        // Start new claim window (5 seconds) - first claim wins
+        const expiresAt = Date.now() + 5000;
+        table.claimWindow = {
+          discardedTile: tile,
+          discardedBy: client.playerId,
+          expiresAt,
+          firstClaimReceived: false
+        };
+        
+        broadcast(tableId, {
+          type: 'claim_window',
+          traceId: mkTrace(),
+          ts: nowIso(),
+          tableId,
+          discardedTile: tile,
+          discardedBy: client.playerId,
+          expiresAt
+        });
+        
+        // Auto-advance turn after claim window if no claims
+        table.claimWindow.timeoutId = setTimeout(() => {
+          if (!table.claimWindow || table.claimWindow.firstClaimReceived) return; // Claim was made
+          
+          // No claims made, advance turn
+          const { advanceTurn } = require('../../engine');
+          advanceTurn(table.state);
+          
+          table.claimWindow = undefined; // Clear claim window
+          
+          broadcast(tableId, {
+            type: 'turn_start',
+            traceId: mkTrace(),
+            ts: nowIso(),
+            tableId,
+            currentPlayer: table.state.currentPlayer,
+            action: 'draw'
+          });
+        }, 5000);
+        
+        return;
+      }
+
+      if (msg.type === 'claim_discard') {
+        const { tableId, exposureTiles } = msg;
+        const table = tables.get(tableId);
+        
+        if (!table || !table.state || client.playerId === undefined) {
+          return;
+        }
+        
+        // Check if this is the first claim (first-come-first-served)
+        if (table.claimWindow && table.claimWindow.firstClaimReceived) {
+          ws.send(JSON.stringify({
+            type: 'action_result',
+            traceId: mkTrace(),
+            ts: nowIso(),
+            tableId,
+            ok: false,
+            error: { code: 'claim_already_made', message: 'Another player already claimed this tile' }
+          } as ServerToClient));
+          return;
+        }
+        
+        // Mark claim as received
+        if (table.claimWindow) {
+          table.claimWindow.firstClaimReceived = true;
+        }
+        
+        // Apply the move
+        const move: Move = { type: 'claimDiscard', player: client.playerId as PlayerId, exposureTiles };
+        const result = applyMove(table.state, move);
+        
+        if (result.error) {
+          ws.send(JSON.stringify({
+            type: 'action_result',
+            traceId: mkTrace(),
+            ts: nowIso(),
+            tableId,
+            ok: false,
+            error: { code: 'invalid_move', message: result.error.message }
+          } as ServerToClient));
+          return;
+        }
+        
+        table.state = result.state;
+        
+        // Clear claim window
+        if (table.claimWindow?.timeoutId) {
+          clearTimeout(table.claimWindow.timeoutId);
+        }
+        table.claimWindow = undefined;
+        
+        // Get the exposure that was just created
+        const playerState = table.state.players[client.playerId];
+        const latestExposure = playerState.exposures[playerState.exposures.length - 1];
+        
+        // Broadcast the claim
+        broadcast(tableId, {
+          type: 'claim_made',
+          traceId: mkTrace(),
+          ts: nowIso(),
+          tableId,
+          player: client.playerId,
+          claimedTile: latestExposure.claimedTile,
+          exposedTiles: latestExposure.tiles
+        });
+        
+        // Check for win
+        if (table.state.winner !== undefined) {
+          const winner = table.state.winner;
+          broadcast(tableId, {
+            type: 'game_won',
+            traceId: mkTrace(),
+            ts: nowIso(),
+            tableId,
+            winner,
+            winningHand: [...table.state.players[winner].hand, ...table.state.players[winner].exposures.flatMap((e: any) => e.tiles)],
+            handPattern: table.state.players[winner].selectedHandIndex !== undefined 
+              ? table.state.options.ruleCard.patterns[table.state.players[winner].selectedHandIndex!]?.name || ''
+              : '',
+            points: 0,
+            payments: [],
+            breakdown: { basePoints: 0, patternPoints: 0, flowerBonus: 0, selfDrawBonus: 0, kongBonus: 0, penalties: 0 }
+          });
+        } else {
+          // Player must now discard
+          broadcast(tableId, {
+            type: 'turn_start',
+            traceId: mkTrace(),
+            ts: nowIso(),
+            tableId,
+            currentPlayer: client.playerId,
+            action: 'discard'
+          });
+        }
+        
+        return;
+      }
+
+      if (msg.type === 'pass_claim') {
+        const { tableId } = msg;
+        const table = tables.get(tableId);
+        
+        if (!table || !table.state || client.playerId === undefined) {
+          return;
+        }
+        
+        // With first-come-first-served, passing is optional
+        // The timeout will handle advancing if no one claims
+        return;
+      }
+
+      if (msg.type === 'exchange_joker') {
+        const { tableId, targetPlayer, exposureIndex, jokerIndex, replacementTile } = msg;
+        const table = tables.get(tableId);
+        if (!table || !table.state || client.playerId === undefined) {
+          return;
+        }
+
+        // Construct move
+        const move: Move = {
+          type: 'exchangeJoker',
+          player: client.playerId as PlayerId,
+          targetPlayer: targetPlayer as PlayerId,
+          exposureIndex,
+          jokerIndex,
+          replacementTile
+        };
+
+        const result = applyMove(table.state, move);
+        if (result.error) {
+          ws.send(JSON.stringify({
+            type: 'action_result',
+            traceId: mkTrace(),
+            ts: nowIso(),
+            tableId,
+            ok: false,
+            error: { code: 'invalid_move', message: result.error.message }
+          } as ServerToClient));
+          return;
+        }
+
+        table.state = result.state;
+
+        // Broadcast joker exchanged message
+        broadcast(tableId, {
+          type: 'joker_exchanged',
+          traceId: mkTrace(),
+          ts: nowIso(),
+          tableId,
+          exchangingPlayer: client.playerId,
+          targetPlayer,
+          exposureIndex,
+          jokerIndex,
+          replacementTile
+        });
+
+        // Send updated hands/exposure delta (concealed hand only to owner)
+        for (const c of table.clients) {
+          const pid = c.playerId!;
+          const playerState = table.state.players[pid];
+          const delta: any = { players: { [pid]: { hand: playerState.hand } } };
+          c.ws.send(JSON.stringify({
+            type: 'game_state_update',
+            traceId: mkTrace(),
+            ts: nowIso(),
+            tableId,
+            delta
+          }));
+        }
         return;
       }
 

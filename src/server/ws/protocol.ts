@@ -34,7 +34,6 @@ export type ReplayRequestMsg = BaseMsg & {
   tableId: string;
   fromIndex?: number;
 };
-
 export type ChatMessageMsg = BaseMsg & {
   type: 'chat_message';
   tableId: string;
@@ -108,6 +107,49 @@ export type CharlestonVoteMsg = BaseMsg & {
   vote: 'yes' | 'no'; // Vote for second Charleston
 };
 
+// Gameplay messages
+export type SelectHandMsg = BaseMsg & {
+  type: 'select_hand';
+  tableId: string;
+  handIndex: number; // Index into ruleCard.patterns
+};
+
+export type DrawTileMsg = BaseMsg & {
+  type: 'draw_tile';
+  tableId: string;
+};
+
+export type DiscardTileMsg = BaseMsg & {
+  type: 'discard_tile';
+  tableId: string;
+  tile: string;
+};
+
+export type ClaimDiscardMsg = BaseMsg & {
+  type: 'claim_discard';
+  tableId: string;
+  exposureTiles: string[]; // Tiles from hand to expose with claimed tile
+};
+
+export type PassClaimMsg = BaseMsg & {
+  type: 'pass_claim';
+  tableId: string;
+};
+
+export type ExchangeJokerMsg = BaseMsg & {
+  type: 'exchange_joker';
+  tableId: string;
+  targetPlayer: number; // Player whose exposure has the joker
+  exposureIndex: number; // Which exposure
+  jokerIndex: number; // Position of joker in the exposure
+  replacementTile: string; // Natural tile to swap with joker
+};
+
+export type RestartGameMsg = BaseMsg & {
+  type: 'restart_game';
+  tableId: string;
+};
+
 
 export type ClientToServer =
   | AuthMsg
@@ -126,6 +168,13 @@ export type ClientToServer =
   | CharlestonSelectMsg
   | CharlestonReadyMsg
   | CharlestonVoteMsg
+  | SelectHandMsg
+  | DrawTileMsg
+  | DiscardTileMsg
+  | ClaimDiscardMsg
+  | PassClaimMsg
+  | ExchangeJokerMsg
+  | RestartGameMsg
   ;
 
 // Server -> Client
@@ -323,6 +372,95 @@ export type CharlestonCompleteMsg = BaseMsg & {
   tableId: string;
 };
 
+// Gameplay state messages
+export type TurnStartMsg = BaseMsg & {
+  type: 'turn_start';
+  tableId: string;
+  currentPlayer: number;
+  action: 'draw' | 'discard'; // Whether player should draw or discard
+};
+
+export type TileDrawnMsg = BaseMsg & {
+  type: 'tile_drawn';
+  tableId: string;
+  player: number;
+  tile?: string; // Only sent to the player who drew
+  tilesRemaining: number;
+};
+
+export type TileDiscardedMsg = BaseMsg & {
+  type: 'tile_discarded';
+  tableId: string;
+  player: number;
+  tile: string;
+  canClaim: boolean; // Whether this discard is claimable
+};
+
+export type ClaimWindowMsg = BaseMsg & {
+  type: 'claim_window';
+  tableId: string;
+  discardedTile: string;
+  discardedBy: number;
+  expiresAt: number; // Timestamp when claim window closes
+};
+
+export type ClaimMadeMsg = BaseMsg & {
+  type: 'claim_made';
+  tableId: string;
+  player: number;
+  claimedTile: string;
+  exposedTiles: string[]; // All tiles in the exposure (including claimed)
+  sectionIndex?: number; // Which section of their hand this matches
+};
+
+export type HandSelectedMsg = BaseMsg & {
+  type: 'hand_selected';
+  tableId: string;
+  player: number;
+  handIndex: number;
+  handName: string; // Display name of the hand
+};
+
+export type JokerExchangedMsg = BaseMsg & {
+  type: 'joker_exchanged';
+  tableId: string;
+  exchangingPlayer: number; // Player who initiated exchange
+  targetPlayer: number; // Player whose joker was taken
+  exposureIndex: number;
+  jokerIndex: number;
+  replacementTile: string;
+};
+
+export type GameRestartedMsg = BaseMsg & {
+  type: 'game_restarted';
+  tableId: string;
+  dealer: number;
+};
+
+export type GameWonMsg = BaseMsg & {
+  type: 'game_won';
+  tableId: string;
+  winner: number;
+  winningHand: string[]; // All tiles in winning hand
+  handPattern: string; // The pattern they were playing for
+  points: number; // Total points scored
+  payments?: { playerId: number; amount: number }[]; // Positive for receive, negative for pay
+  breakdown?: {
+    basePoints: number;
+    patternPoints: number;
+    flowerBonus: number;
+    selfDrawBonus: number;
+    kongBonus: number;
+    penalties: number;
+  };
+};
+
+export type GameDrawMsg = BaseMsg & {
+  type: 'game_draw';
+  tableId: string;
+  reason: 'wall_exhausted' | 'no_winner';
+};
+
 export type ServerToClient =
   | GameStateUpdateMsg
   | ActionResultMsg
@@ -341,6 +479,16 @@ export type ServerToClient =
   | CharlestonPassExecutedMsg
   | CharlestonVoteResultMsg
   | CharlestonCompleteMsg
+  | TurnStartMsg
+  | TileDrawnMsg
+  | TileDiscardedMsg
+  | ClaimWindowMsg
+  | ClaimMadeMsg
+  | HandSelectedMsg
+  | JokerExchangedMsg
+  | GameRestartedMsg
+  | GameWonMsg
+  | GameDrawMsg
   | PresenceUpdateMsg
   | ChatMessageMsg
   | AdminAuthResultMsg

@@ -175,3 +175,34 @@ export function setupGame(rng: DeterministicRNG, dealer: PlayerId): {
     dice
   };
 }
+
+/**
+ * Creates a gameplay wall from remaining tiles after Charleston
+ * Shuffles using deterministic RNG for fairness
+ */
+export function createGameplayWall(remainingTiles: Tile[], rng: DeterministicRNG): Tile[] {
+  const wall = [...remainingTiles];
+  
+  // Fisher-Yates shuffle
+  for (let i = wall.length - 1; i > 0; i--) {
+    const j = rng.nextInt(i + 1);
+    [wall[i], wall[j]] = [wall[j], wall[i]];
+  }
+  
+  return wall;
+}
+
+/**
+ * Draws a tile from the wall
+ * Returns the tile and updated wall index, or undefined if wall is empty
+ */
+export function drawFromWall(wall: Tile[], wallIndex: number): { tile?: Tile; newIndex: number } {
+  if (wallIndex >= wall.length) {
+    return { tile: undefined, newIndex: wallIndex };
+  }
+  
+  return {
+    tile: wall[wallIndex],
+    newIndex: wallIndex + 1
+  };
+}

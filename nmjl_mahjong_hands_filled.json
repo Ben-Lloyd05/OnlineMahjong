@@ -1,93 +1,91 @@
 {
     "2024": {
-        "2024": {
-            "222 000 2222 4444": [
-                "222",
-                "000",
-                "2222 4444"                
-            ],
-            
-            "FFFF 2222 0000 24": [
-                "FFFF",
-                "2222",
-                "0000",
-                "24"
-            ],
+        "222 000 2222 4444": [
+            "222",
+            "000",
+            "2222 4444"                
+        ],
+        
+        "FFFF 2222 0000 24": [
+            "FFFF",
+            "2222",
+            "0000",
+            "24"
+        ],
 
-            "FF 2024 2222 2222": [
-                "FF",
-                "2024",
-                "2222",
-                "2222"
-            ],
+        "FF 2024 2222 2222": [
+            "FF",
+            "2024",
+            "2222",
+            "2222"
+        ],
 
-            "NN EE 2024 WWW SS": [
-                "NN EE 2024 WWW SS"
-            ]
-        },
-        "Quints": {
-            "FF 11111 22 33333": [
-                "FF 11111 22 33333"
-            ],
-            "11111 NNNN 88888": [
-                "11111",
-                "NNNN",
-                "88888"
-            ],
-            "11 22222 11 22222": [
-                "11 22222",
-                "11 22222"
-            ],
-            "FFFFF DDDD 11111": [
-                "FFFFF",
-                "DDDD",
-                "11111"
-            ]
-        },
+        "NN EE 2024 WWW SS": [
+            "NN EE 2024 WWW SS"
+        ]
+    },
+    "Quints": {
+        "FF 11111 22 33333": [
+            "FF 11111 22 33333"
+        ],
+        "11111 NNNN 88888": [
+            "11111",
+            "NNNN",
+            "88888"
+        ],
+        "11 22222 11 22222": [
+            "11 22222",
+            "11 22222"
+        ],
+        "FFFFF DDDD 11111": [
+            "FFFFF",
+            "DDDD",
+            "11111"
+        ]
+    },
 
-        "Winds-Dragons": {
-            "NNNN EEE WWW SSSS": [
-                "NNNN EEE WWW SSS"
-            ],
-            "NNN EEEE WWW SSS": [
-                "NNN EEEE WWWW SSS"
-            ],
-            "FFFF DDD DDDD DDD": [
-                "FFFF",
-                "DDD",
-                "DDDD",
-                "DDD"
-            ],
-            "NNN SSS 1111 2222": [
-                "NNN SSS",
-                "1111",
-                "2222"
-            ],
-            "EEE WWW 1111 2222": [
-                "EEE WWW",
-                "1111",
-                "2222"
-            ],
-            "FF NN EEE WWW SSSS": [
-                "FF NN EEE WWW SSSS"
-            ],
-            "NNNN 11 22 33 SSSS": [
-                "NNNN 11 22 33 SSSS"
-            ],
-            "EEEE 11 22 33 WWWW": [
-                "EEEE 11 22 33 WWWW"
-            ],
-            "FF DDDD NEWS DDDD": [
-                "FF",
-                "DDDD",
-                "NEWS",
-                "DDDD"
-            ],
-            "NNN EE SSS 111 111" :[
-                "NNN EW SSS",
-                "111",
-                "111"
-            ]
-        }
+    "Winds-Dragons": {
+        "NNNN EEE WWW SSSS": [
+            "NNNN EEE WWW SSS"
+        ],
+        "NNN EEEE WWW SSS": [
+            "NNN EEEE WWWW SSS"
+        ],
+        "FFFF DDD DDDD DDD": [
+            "FFFF",
+            "DDD",
+            "DDDD",
+            "DDD"
+        ],
+        "NNN SSS 1111 2222": [
+            "NNN SSS",
+            "1111",
+            "2222"
+        ],
+        "EEE WWW 1111 2222": [
+            "EEE WWW",
+            "1111",
+            "2222"
+        ],
+        "FF NN EEE WWW SSSS": [
+            "FF NN EEE WWW SSSS"
+        ],
+        "NNNN 11 22 33 SSSS": [
+            "NNNN 11 22 33 SSSS"
+        ],
+        "EEEE 11 22 33 WWWW": [
+            "EEEE 11 22 33 WWWW"
+        ],
+        "FF DDDD NEWS DDDD": [
+            "FF",
+            "DDDD",
+            "NEWS",
+            "DDDD"
+        ],
+        "NNN EE SSS 111 111" :[
+            "NNN EW SSS",
+            "111",
+            "111"
+        ]
     }
 }

@@ -2,8 +2,89 @@
 @tailwind components;
 @tailwind utilities;
 
-/* App base styles */
+/* App base styles with dark green theme */
 html, body, #root { height: 100%; }
-body { @apply bg-slate-900 text-slate-100; }
+body { 
+  @apply text-slate-100;
+  background: linear-gradient(135deg, #1a3a2e 0%, #0f2419 100%);
+  background-attachment: fixed;
+}
+
+/* Smooth transitions for all interactive elements */
+* {
+  transition: background-color 0.3s ease, border-color 0.3s ease, transform 0.2s ease;
+}
+
+/* Custom scrollbar with green theme */
+::-webkit-scrollbar {
+  width: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: #0f2419;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #2d5a3d;
+  border-radius: 5px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #3d6b3d;
+}
+
+/* Keyframe Animations */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.8;
+  }
+}
+
+@keyframes slideUp {
+  from {
+    transform: translateY(20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateX(-20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+/* Utility classes for animations */
+.animate-fadeIn {
+  animation: fadeIn 0.3s ease-in-out;
+}
+
+.animate-slideUp {
+  animation: slideUp 0.4s ease-out;
+}
+
+.animate-slideIn {
+  animation: slideIn 0.4s ease-out;
+}
 
 

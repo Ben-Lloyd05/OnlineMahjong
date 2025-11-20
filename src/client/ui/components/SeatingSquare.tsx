@@ -15,9 +15,11 @@ interface SeatingSquareProps {
   yourHand?: string[]; // The actual tiles for YOU
   hideBottomHand?: boolean; // Hide bottom player's hand (for Charleston overlay)
   onReorderHand?: (newOrder: string[]) => void; // Callback when tiles are reordered
+  onTileClick?: (tile: string) => void; // Callback when tile is clicked (for discard)
+  allowTileClick?: boolean; // Whether tiles can be clicked
 }
 
-export const SeatingSquare: React.FC<SeatingSquareProps> = ({ players, yourHand, hideBottomHand, onReorderHand }) => {
+export const SeatingSquare: React.FC<SeatingSquareProps> = ({ players, yourHand, hideBottomHand, onReorderHand, onTileClick, allowTileClick }) => {
   const [draggedIndex, setDraggedIndex] = React.useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = React.useState<number | null>(null);
 
@@ -94,10 +96,16 @@ export const SeatingSquare: React.FC<SeatingSquareProps> = ({ players, yourHand,
                     
                     {/* The tile itself */}
                     <div 
-                      className={`tile-card card-horizontal ${isJoker ? 'joker-tile' : ''} ${draggedIndex === i ? 'dragging' : ''}`}
+                      className={`tile-card card-horizontal ${isJoker ? 'joker-tile' : ''} ${draggedIndex === i ? 'dragging' : ''} ${allowTileClick ? 'tile-clickable' : ''}`}
                       draggable
                       onDragStart={handleDragStart(i)}
                       onDragEnd={handleDragEnd}
+                      onClick={() => {
+                        if (allowTileClick && onTileClick) {
+                          onTileClick(tile);
+                        }
+                      }}
+                      style={allowTileClick ? { cursor: 'pointer' } : undefined}
                     >
                       {tile}
                     </div>

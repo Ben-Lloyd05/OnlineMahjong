@@ -209,18 +209,18 @@ export default function LobbyView({ messages, onCreateTable, onJoinTable }: Lobb
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-green-800 to-green-900 flex items-center justify-center p-4">
-      <div className="bg-white rounded-xl shadow-2xl p-8 max-w-md w-full">
-        <h1 className="text-3xl font-bold text-center mb-8 text-gray-800">
+    <div className="min-h-screen bg-gradient-to-br from-emerald-950 via-emerald-900 to-gray-900 flex items-center justify-center p-4">
+      <div className="bg-gradient-to-br from-gray-900 to-gray-800 border-2 border-emerald-700 rounded-xl shadow-2xl p-8 max-w-md w-full">
+        <h1 className="text-3xl font-bold text-center mb-8 text-emerald-400">
           American Mahjong Lobby
         </h1>
         
         {/* Error Messages */}
         {actionResult && (
-          <div className="mb-6 p-4 bg-red-100 border border-red-400 text-red-700 rounded relative">
+          <div className="mb-6 p-4 bg-red-900 border border-red-600 text-red-200 rounded relative">
             <button
               onClick={() => setDismissedErrors(new Set([...dismissedErrors, actionResult.traceId]))}
-              className="absolute top-2 right-2 text-red-700 hover:text-red-900 font-bold text-lg"
+              className="absolute top-2 right-2 text-red-200 hover:text-red-100 font-bold text-lg"
               aria-label="Dismiss error"
             >
               ×
@@ -232,14 +232,14 @@ export default function LobbyView({ messages, onCreateTable, onJoinTable }: Lobb
         
         {/* Your Active Tables */}
         {hasTables && (
-          <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded">
-            <p className="font-semibold text-blue-800 mb-3">Your Active Tables</p>
-            <div className="divide-y divide-gray-200">
+          <div className="mb-6 p-4 bg-gradient-to-r from-emerald-900 to-emerald-800 border border-emerald-600 rounded">
+            <p className="font-semibold text-emerald-300 mb-3">Your Active Tables</p>
+            <div className="divide-y divide-emerald-700">
               {allTables.map((table: {inviteCode: string, type: 'created' | 'joined', tableId: string}, idx: number) => (
-                <div key={idx} className="flex items-center justify-between py-3 first:pt-0 last:pb-0 hover:bg-blue-50 transition-colors px-2">
+                <div key={idx} className="flex items-center justify-between py-3 first:pt-0 last:pb-0 hover:bg-emerald-800/50 transition-colors px-2 rounded">
                   <div className="flex items-center gap-3">
-                    <span className="text-sm text-gray-600">Code:</span>
-                    <span className="font-mono font-bold text-lg">{table.inviteCode}</span>
+                    <span className="text-sm text-emerald-400">Code:</span>
+                    <span className="font-mono font-bold text-lg text-emerald-200">{table.inviteCode}</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <button
@@ -250,13 +250,13 @@ export default function LobbyView({ messages, onCreateTable, onJoinTable }: Lobb
                           : Math.random().toString(36).slice(2);
                         onJoinTable(table.inviteCode, clientSeed, username);
                       }}
-                      className={`px-4 py-2 ${table.type === 'created' ? 'bg-green-600 hover:bg-green-700' : 'bg-blue-600 hover:bg-blue-700'} text-white text-sm font-medium rounded transition-colors`}
+                      className={`px-4 py-2 ${table.type === 'created' ? 'bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800' : 'bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800'} text-white text-sm font-medium rounded transition-all hover:shadow-lg`}
                     >
                       Connect
                     </button>
                     <button
                       onClick={() => handleRemoveTable(table.inviteCode)}
-                      className="text-gray-400 hover:text-red-600 font-bold text-2xl w-8 h-8 flex items-center justify-center"
+                      className="text-gray-500 hover:text-red-500 font-bold text-2xl w-8 h-8 flex items-center justify-center transition-colors"
                       aria-label="Remove table"
                       title="Remove from list"
                     >
@@ -272,30 +272,30 @@ export default function LobbyView({ messages, onCreateTable, onJoinTable }: Lobb
         {/* Main Actions - Always visible */}
         <div className="space-y-6">
           {/* Create Table Section */}
-          <div className="border-b border-gray-200 pb-6">
-            <h2 className="text-xl font-semibold mb-4 text-gray-700">
+          <div className="border-b border-emerald-800 pb-6">
+            <h2 className="text-xl font-semibold mb-4 text-emerald-300">
               Create New Table
             </h2>
             <button
               onClick={handleCreateTable}
               disabled={isCreating}
-              className="w-full bg-green-600 hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-semibold py-3 px-4 rounded-lg transition-colors"
+              className="w-full bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 disabled:from-gray-600 disabled:to-gray-700 disabled:cursor-not-allowed text-white font-semibold py-3 px-4 rounded-lg transition-all hover:shadow-lg hover:shadow-emerald-500/50"
             >
               {isCreating ? 'Creating...' : 'Create Table'}
             </button>
-            <p className="text-sm text-gray-500 mt-2">
+            <p className="text-sm text-gray-400 mt-2">
               You'll get a unique invite code to share with friends.
             </p>
           </div>
           
           {/* Join Table Section */}
           <div>
-            <h2 className="text-xl font-semibold mb-4 text-gray-700">
+            <h2 className="text-xl font-semibold mb-4 text-emerald-300">
               Join Existing Table
             </h2>
             <form onSubmit={handleJoinTable}>
               <div className="mb-4">
-                <label htmlFor="inviteCode" className="block text-sm font-medium text-gray-700 mb-2">
+                <label htmlFor="inviteCode" className="block text-sm font-medium text-emerald-400 mb-2">
                   Invite Code
                 </label>
                 <input
@@ -305,29 +305,29 @@ export default function LobbyView({ messages, onCreateTable, onJoinTable }: Lobb
                   onChange={(e) => setInviteCode(e.target.value)}
                   placeholder="Enter 6-character code"
                   maxLength={6}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent font-mono text-center text-lg uppercase"
+                  className="w-full px-3 py-2 bg-gray-800 border border-emerald-700 text-emerald-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent font-mono text-center text-lg uppercase placeholder-gray-600"
                   disabled={isJoining}
                 />
               </div>
               <button
                 type="submit"
                 disabled={!inviteCode.trim() || isJoining}
-                className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-semibold py-3 px-4 rounded-lg transition-colors"
+                className="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 disabled:from-gray-600 disabled:to-gray-700 disabled:cursor-not-allowed text-white font-semibold py-3 px-4 rounded-lg transition-all hover:shadow-lg hover:shadow-blue-500/50"
               >
                 {isJoining ? 'Joining...' : 'Join Table'}
               </button>
             </form>
-            <p className="text-sm text-gray-500 mt-2">
+            <p className="text-sm text-gray-400 mt-2">
               Enter the 6-character code shared by your friend.
             </p>
           </div>
         </div>
         
         <div className="mt-8 text-center text-sm text-gray-500">
-          <p>American Mahjong • Online Multiplayer</p>
+          <p className="text-emerald-400">American Mahjong • Online Multiplayer</p>
           {username && (
-            <p className="mt-2">
-              Playing as: <span className="font-semibold text-gray-700">{username}</span>
+            <p className="mt-2 text-gray-400">
+              Playing as: <span className="font-semibold text-emerald-300">{username}</span>
               {' • '}
               <button
                 onClick={() => {

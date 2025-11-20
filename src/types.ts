@@ -36,9 +36,17 @@ export type HandCategory =
   | '369'            // Specific numbers
   | 'singles-pairs'; // No jokers allowed
 
+export interface Exposure {
+  tiles: Tile[]; // Tiles in this exposure (including claimed tile)
+  claimedTile?: Tile; // The tile that was claimed from another player
+  sectionIndex?: number; // Which section of their selected hand this matches
+}
+
 export interface PlayerState {
   hand: Tile[];
   melds: Meld[];
+  exposures: Exposure[]; // Visible exposed sections
+  selectedHandIndex?: number; // Index into ruleCard.patterns for their chosen hand
   isReady: boolean;
   isDead: boolean;
   score: number;
@@ -50,10 +58,13 @@ export interface GameState {
   players: Record<PlayerId, PlayerState>;
   dealer: PlayerId;
   currentPlayer: PlayerId;
-  wall: Tile[];
+  wall: Tile[]; // Remaining tiles to draw from (shuffled after Charleston)
+  wallIndex: number; // Current position in wall for drawing
   deadWall: Tile[];
   reservedTiles: Tile[]; // Reserved tiles from dice roll
   discardPile: Array<{ player: PlayerId; tile: Tile }>;
+  currentDiscard?: { player: PlayerId; tile: Tile }; // Most recent discard that can be claimed
+  pendingClaims: Array<{ player: PlayerId; exposureTiles: Tile[] }>; // Players who want to claim current discard
   lastAction?: {
     type: string;
     player: PlayerId;
@@ -65,6 +76,8 @@ export interface GameState {
   };
   logs: Move[];
   dice?: number; // The dice roll for wall breaking
+  winner?: PlayerId; // Set when game is won
+  isDraw?: boolean; // Set when game ends in draw
 }
 export type Meld = {
   tiles: Tile[];
@@ -142,6 +155,13 @@ export type Move =
   | { type: 'declareMahjong'; player: PlayerId }
   | { type: 'stopCharleston'; player: PlayerId }
   | { type: 'replaceJoker'; player: PlayerId; meldIndex: number; tile: Tile }
-  | { type: 'kong'; player: PlayerId; tiles: Tile[] };
+  | { type: 'kong'; player: PlayerId; tiles: Tile[] }
+  | { type: 'selectHand'; player: PlayerId; handIndex: number } // Select a hand pattern from rule card
+  | { type: 'drawTile'; player: PlayerId } // Draw tile from wall during play phase
+  | { type: 'discardTile'; player: PlayerId; tile: Tile } // Discard during play phase
+  | { type: 'claimDiscard'; player: PlayerId; exposureTiles: Tile[] } // Claim most recent discard with exposure tiles
+  | { type: 'passClaim'; player: PlayerId } // Pass on claiming the current discard
+    | { type: 'exchangeJoker'; player: PlayerId; targetPlayer: PlayerId; exposureIndex: number; jokerIndex: number; replacementTile: Tile } // Exchange natural tile for exposed joker
+  | { type: 'winGame'; player: PlayerId }; // Automatic win declaration
 
 
