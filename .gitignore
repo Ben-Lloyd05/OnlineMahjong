@@ -1,3 +1,6 @@
+# Ignore Copilot instructions
+.github/copilot-instructions.md
+
 # Dependencies
 node_modules/
 npm-debug.log*

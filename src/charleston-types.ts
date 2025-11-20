@@ -11,7 +11,6 @@ export type CharlestonPhase =
   | 'pass-left-2'     // Pass 4 (Round 2)
   | 'pass-across-2'   // Pass 5 (Round 2)
   | 'pass-right-2'    // Pass 6 (blind pass option)
-  | 'courtesy'        // Courtesy pass
   | 'complete';       // Charleston finished
 
 // Individual player's charleston state
@@ -20,14 +19,10 @@ export type CharlestonPlayerState = {
   ready: boolean;
   blindPass?: {
     enabled: boolean;
-    count: 1 | 2 | 3; // How many tiles to take from incoming
+    count: 0 | 1 | 2; // How many tiles to take from incoming (kept)
   };
   vote?: 'yes' | 'no';
   voteSubmitted?: boolean; // Whether vote has been locked in
-  courtesyOffer?: {
-    tiles: Tile[];
-    targetPlayer: PlayerId;
-  };
 };
 
 export type CharlestonState = {

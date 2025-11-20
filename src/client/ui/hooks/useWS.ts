@@ -166,8 +166,8 @@ export function useWS(url: string, tableId: string, opts?: { clientSeed?: string
   const createTable = (clientSeed?: string, username?: string) => {
     const ts = new Date().toISOString();
     const tid = cryptoRandomId();
-    const sessionToken = localStorage.getItem('mahjong_session_token') || undefined;
-    send({ type: 'create_table', traceId: tid(), ts, clientSeed, username, sessionToken } as ClientToServer);
+    // Don't send session token when creating a new table - it's always a fresh creation
+    send({ type: 'create_table', traceId: tid(), ts, clientSeed, username } as ClientToServer);
   };
 
   const joinTable = (inviteCode: string, clientSeed?: string, username?: string) => {

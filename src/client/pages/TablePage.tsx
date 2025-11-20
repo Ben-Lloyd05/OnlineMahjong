@@ -19,9 +19,10 @@ export default function TablePage({ messages, onLeaveTable, onJoinTable, onSendM
   const { inviteCode } = useParams<{ inviteCode: string }>();
   const [year, setYear] = React.useState<2024 | 2025>(2025);
   const [wsReady, setWsReady] = React.useState(false);
-  const [hasJoinedThisSession, setHasJoinedThisSession] = React.useState(false);
-  const initialMessageCountRef = React.useRef(messages.length);
+  const hasJoinedRef = React.useRef(false); // Use ref instead of state to prevent re-renders
+  const hasReconnectedRef = React.useRef(false); // Track if we've already attempted reconnection
   const [currentHand, setCurrentHand] = React.useState<string[]>([]); // Track current hand through Charleston
+  const processedCharlestonPassesRef = React.useRef<Set<string>>(new Set()); // Track processed Charleston passes
 
   // Mark WebSocket as ready after a short delay (ensures connection is established)
   React.useEffect(() => {
@@ -33,36 +34,60 @@ export default function TablePage({ messages, onLeaveTable, onJoinTable, onSendM
     return () => clearTimeout(timer);
   }, []);
 
-  // Auto-join table if we landed on this page via direct URL
+  // Auto-join table if we landed on this page via direct URL or page refresh
   React.useEffect(() => {
-    if (!inviteCode || !wsReady || hasJoinedThisSession) {
+    if (!inviteCode || !wsReady) {
       if (inviteCode && !wsReady) {
         console.log('[TablePage] Waiting for WebSocket to be ready...');
       }
       return;
     }
     
-    // Check if we've EVER received a join/create message for this table (including before mount)
-    // This prevents auto-joining if we just created the table or already joined it
-    const alreadyJoinedMsg = messages.find((msg: any) => 
+    // Check if we've received a join/create message for this table
+    const alreadyJoinedOrCreated = messages.find((msg: any) => 
       (msg.type === 'table_joined' || msg.type === 'table_created') && 
       msg.inviteCode === inviteCode
     );
     
-    if (!alreadyJoinedMsg) {
-      console.log('[TablePage] Auto-joining table via URL:', inviteCode);
-      const clientSeed = globalThis.crypto && 'randomUUID' in globalThis.crypto 
-        ? (globalThis.crypto as any).randomUUID() 
-        : Math.random().toString(36).slice(2);
-      // Get username from localStorage
-      const username = localStorage.getItem('mahjong_username') || 'Guest';
-      onJoinTable(inviteCode, clientSeed, username);
-      setHasJoinedThisSession(true);
-    } else {
-      console.log('[TablePage] Already joined/created this table:', inviteCode, 'Message type:', alreadyJoinedMsg.type);
-      setHasJoinedThisSession(true);
+    if (alreadyJoinedOrCreated) {
+      // We already have a join/create message for this table
+      if (!hasJoinedRef.current) {
+        console.log('[TablePage] Found existing join/create message for table:', inviteCode, '- marking as joined');
+        hasJoinedRef.current = true;
+      }
+      
+      // Check if this might be a page refresh by looking for a stored session token
+      const storedSessionToken = localStorage.getItem(`mahjong_session_${inviteCode}`);
+      
+      // Only reconnect if:
+      // 1. We have a stored session token (indicates we were previously connected)
+      // 2. We haven't already reconnected this component instance
+      // 3. The WebSocket is ready
+      if (storedSessionToken && !hasReconnectedRef.current) {
+        hasReconnectedRef.current = true;
+        console.log('[TablePage] Page refresh detected - reconnecting to table:', inviteCode);
+        const clientSeed = globalThis.crypto && 'randomUUID' in globalThis.crypto 
+          ? (globalThis.crypto as any).randomUUID() 
+          : Math.random().toString(36).slice(2);
+        const username = localStorage.getItem('mahjong_username') || 'Guest';
+        onJoinTable(inviteCode, clientSeed, username);
+      }
+      return; // Important: return early - no auto-join needed
     }
-  }, [inviteCode, wsReady, messages, onJoinTable, hasJoinedThisSession]);
+    
+    // If we've already attempted to join, don't try again
+    if (hasJoinedRef.current) {
+      console.log('[TablePage] Already attempted join, not trying again');
+      return;
+    }
+    
+    // No message at all - this must be someone following a shared link
+    // They need to explicitly join via the UI, not auto-join
+    // The SeatingSquare component should show a "Join Table" button
+    console.log('[TablePage] No join/create message found - user needs to manually join');
+    
+    // Don't auto-join - let the user decide if they want to join this table
+  }, [inviteCode, wsReady, messages, onJoinTable]);
 
   // Get the most recent game state update
   const gameSnapshot = useMemo(() => {
@@ -77,27 +102,56 @@ export default function TablePage({ messages, onLeaveTable, onJoinTable, onSendM
   // Get the most recent player count update
   const playerCountInfo = useMemo(() => {
     console.log('[TablePage] Recalculating player count from', messages.length, 'messages');
+    
+    // Get the current table ID from messages
+    const joinMsg = messages.find((m: any) => 
+      (m.type === 'table_created' || m.type === 'table_joined') && 
+      m.inviteCode === inviteCode
+    ) as any;
+    
+    const currentTableId = joinMsg?.tableId;
+    if (!currentTableId) {
+      console.log('[TablePage] No current tableId found for player count');
+      return { players: 1, ready: false };
+    }
+    
+    // Look for most recent player_count_update FOR THIS TABLE ONLY
     for (let i = messages.length - 1; i >= 0; i--) {
-      if ((messages[i] as any).type === 'player_count_update') {
-        console.log('[TablePage] Found player_count_update:', messages[i]);
-        return messages[i] as any;
+      const msg = messages[i] as any;
+      if (msg.type === 'player_count_update' && msg.tableId === currentTableId) {
+        console.log('[TablePage] Found player_count_update for current table:', msg);
+        return msg;
       }
     }
-    console.log('[TablePage] No player_count_update found, using default');
+    console.log('[TablePage] No player_count_update found for current table, using default');
     return { players: 1, ready: false };
-  }, [messages]);
+  }, [messages, inviteCode]);
 
   // Get the most recent players update (names and info)
   const playersInfo = useMemo(() => {
+    // Get the current table ID from messages
+    const joinMsg = messages.find((m: any) => 
+      (m.type === 'table_created' || m.type === 'table_joined') && 
+      m.inviteCode === inviteCode
+    ) as any;
+    
+    const currentTableId = joinMsg?.tableId;
+    if (!currentTableId) {
+      console.log('[TablePage] No current tableId found');
+      return null;
+    }
+    
+    // Look for most recent players_update FOR THIS TABLE ONLY
     for (let i = messages.length - 1; i >= 0; i--) {
-      if ((messages[i] as any).type === 'players_update') {
-        console.log('[TablePage] Found players_update:', messages[i]);
-        return messages[i] as any;
+      const msg = messages[i] as any;
+      if (msg.type === 'players_update' && msg.tableId === currentTableId) {
+        console.log('[TablePage] Found players_update for current table:', msg);
+        return msg;
       }
     }
-    console.log('[TablePage] No players_update found');
+    console.log('[TablePage] No players_update found for current table');
     return null;
-  }, [messages]);
+  }, [messages, inviteCode]);
 
   // Get the game start message (with your hand) for THIS specific table
   const gameStartInfo = useMemo(() => {
@@ -170,8 +224,31 @@ export default function TablePage({ messages, onLeaveTable, onJoinTable, onSendM
     
     const storageKey = getTileOrderStorageKey();
     
-    // Initialize with starting hand
+    // Get current table ID
+    const joinMsg = messages.find((m: any) => 
+      (m.type === 'table_created' || m.type === 'table_joined') && 
+      m.inviteCode === inviteCode
+    ) as any;
+    
+    const currentTableId = joinMsg?.tableId;
+    if (!currentTableId) return;
+    
+    // Initialize with starting hand (or most recent Charleston hand)
     if (currentHand.length === 0 && gameStartInfo.yourHand) {
+      // First check if there's a Charleston pass that has already happened
+      let mostRecentCharlestonHand: string[] | null = null;
+      for (let i = messages.length - 1; i >= 0; i--) {
+        const msg = messages[i] as any;
+        if (msg.type === 'charleston_pass_executed' && msg.tableId === currentTableId) {
+          console.log('[TablePage] Found most recent Charleston hand on init:', msg.yourNewTiles);
+          mostRecentCharlestonHand = msg.yourNewTiles;
+          break;
+        }
+      }
+      
+      // Use Charleston hand if available, otherwise use starting hand
+      const handToUse = mostRecentCharlestonHand || gameStartInfo.yourHand;
+      
       // Try to restore saved order from localStorage
       if (storageKey) {
         try {
@@ -179,10 +256,10 @@ export default function TablePage({ messages, onLeaveTable, onJoinTable, onSendM
           if (savedOrder) {
             const parsedOrder = JSON.parse(savedOrder);
             // Verify all tiles in saved order exist in current hand
-            const allTilesValid = parsedOrder.every((tile: string) => gameStartInfo.yourHand.includes(tile));
-            const allTilesPresent = gameStartInfo.yourHand.every((tile: string) => parsedOrder.includes(tile));
+            const allTilesValid = parsedOrder.every((tile: string) => handToUse.includes(tile));
+            const allTilesPresent = handToUse.every((tile: string) => parsedOrder.includes(tile));
             
-            if (allTilesValid && allTilesPresent && parsedOrder.length === gameStartInfo.yourHand.length) {
+            if (allTilesValid && allTilesPresent && parsedOrder.length === handToUse.length) {
               console.log('[TablePage] Restored tile order from localStorage');
               setCurrentHand(parsedOrder);
               return;
@@ -193,34 +270,31 @@ export default function TablePage({ messages, onLeaveTable, onJoinTable, onSendM
         }
       }
       
-      setCurrentHand(gameStartInfo.yourHand);
+      setCurrentHand(handToUse);
+      return;
     }
     
-    // Update hand when Charleston pass executed
-    const joinMsg = messages.find((m: any) => 
-      (m.type === 'table_created' || m.type === 'table_joined') && 
-      m.inviteCode === inviteCode
-    ) as any;
-    
-    const currentTableId = joinMsg?.tableId;
-    if (!currentTableId) return;
-    
-    // Find most recent charleston_pass_executed
+    // Update hand when Charleston pass executed (only process NEW messages)
+    // Find most recent charleston_pass_executed that we haven't processed yet
     for (let i = messages.length - 1; i >= 0; i--) {
       const msg = messages[i] as any;
       if (msg.type === 'charleston_pass_executed' && msg.tableId === currentTableId) {
-        console.log('[TablePage] Updating hand from Charleston pass:', msg.yourNewTiles);
+        const msgKey = `${msg.passNumber}_${msg.ts}`;
         
-        // Merge new tiles: keep existing tiles in their order, add new tiles at the end
-        const existingTiles = currentHand.filter(tile => msg.yourNewTiles.includes(tile));
-        const newTiles = msg.yourNewTiles.filter((tile: string) => !existingTiles.includes(tile));
-        const mergedHand = [...existingTiles, ...newTiles];
+        if (processedCharlestonPassesRef.current.has(msgKey)) {
+          // Already processed this one
+          break;
+        }
         
-        setCurrentHand(mergedHand);
+        console.log('[TablePage] Processing new Charleston pass:', msg.yourNewTiles);
+        processedCharlestonPassesRef.current.add(msgKey);
+        
+        // Set hand to exactly what the server sent - the server is authoritative
+        setCurrentHand(msg.yourNewTiles);
         break;
       }
     }
-  }, [messages, gameStartInfo, inviteCode, currentHand.length, getTileOrderStorageKey]);
+  }, [messages, gameStartInfo, inviteCode, getTileOrderStorageKey]);
 
   // Save tile order to localStorage whenever it changes
   React.useEffect(() => {
@@ -245,10 +319,9 @@ export default function TablePage({ messages, onLeaveTable, onJoinTable, onSendM
 
   // Check if we received a "table full" error
   const tableFull = useMemo(() => {
-    // Look for error messages after this component mounted
-    const newMessages = messages.slice(initialMessageCountRef.current);
-    for (let i = newMessages.length - 1; i >= 0; i--) {
-      const msg = newMessages[i] as any;
+    // Look for the most recent error messages
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const msg = messages[i] as any;
       if (msg.type === 'action_result' && !msg.ok) {
         if (msg.error?.code === 'table_full' || msg.error?.message?.includes('full')) {
           return true;
@@ -315,9 +388,21 @@ export default function TablePage({ messages, onLeaveTable, onJoinTable, onSendM
 
   // Check if game is paused
   const gamePauseInfo = useMemo(() => {
-    // Look for most recent game_paused or game_resumed message
+    // Get the current table ID from messages
+    const joinMsg = messages.find((m: any) => 
+      (m.type === 'table_created' || m.type === 'table_joined') && 
+      m.inviteCode === inviteCode
+    ) as any;
+    
+    const currentTableId = joinMsg?.tableId;
+    if (!currentTableId) return null;
+    
+    // Look for most recent game_paused or game_resumed message FOR THIS TABLE ONLY
     for (let i = messages.length - 1; i >= 0; i--) {
       const msg = messages[i] as any;
+      // Only consider messages for the current table
+      if (msg.tableId !== currentTableId) continue;
+      
       if (msg.type === 'game_resumed') {
         return null; // Game was paused but now resumed
       }
@@ -328,7 +413,7 @@ export default function TablePage({ messages, onLeaveTable, onJoinTable, onSendM
       }
     }
     return null;
-  }, [messages]);
+  }, [messages, inviteCode]);
 
   // Use invite code from URL
   const currentInviteCode = inviteCode || 'Unknown';
@@ -365,7 +450,7 @@ export default function TablePage({ messages, onLeaveTable, onJoinTable, onSendM
   };
 
   // Charleston handlers
-  const handleCharlestonSelectTiles = (tiles: string[], blindPass?: { enabled: boolean; count: 1 | 2 | 3 }) => {
+  const handleCharlestonSelectTiles = (tiles: string[], blindPass?: { enabled: boolean; count: 0 | 1 | 2 }) => {
     const joinMsg = messages.find((m: any) => 
       (m.type === 'table_created' || m.type === 'table_joined') && 
       m.inviteCode === inviteCode
@@ -416,23 +501,7 @@ export default function TablePage({ messages, onLeaveTable, onJoinTable, onSendM
     });
   };
 
-  const handleCharlestonCourtesy = (tiles: string[], targetPlayer: number) => {
-    const joinMsg = messages.find((m: any) => 
-      (m.type === 'table_created' || m.type === 'table_joined') && 
-      m.inviteCode === inviteCode
-    ) as any;
-    
-    if (!joinMsg?.tableId) return;
-    
-    onSendMessage({
-      type: 'charleston_courtesy',
-      tableId: joinMsg.tableId,
-      tiles,
-      targetPlayer,
-      traceId: crypto.randomUUID(),
-      ts: new Date().toISOString()
-    });
-  };
+  // Courtesy pass removed
 
   // If table is full, show error screen
   if (tableFull) {
@@ -655,7 +724,6 @@ export default function TablePage({ messages, onLeaveTable, onJoinTable, onSendM
             onSelectTiles={handleCharlestonSelectTiles}
             onReady={handleCharlestonReady}
             onVote={handleCharlestonVote}
-            onCourtesyOffer={handleCharlestonCourtesy}
             onReorderHand={handleReorderHand}
           />
         </div>

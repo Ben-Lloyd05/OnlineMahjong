@@ -93,7 +93,7 @@ export type CharlestonSelectMsg = BaseMsg & {
   tiles: string[]; // Tiles selected to pass
   blindPass?: {
     enabled: boolean;
-    count: 1 | 2 | 3; // How many tiles to take from incoming
+    count: 0 | 1 | 2; // How many tiles to take from incoming
   };
 };
 
@@ -108,12 +108,6 @@ export type CharlestonVoteMsg = BaseMsg & {
   vote: 'yes' | 'no'; // Vote for second Charleston
 };
 
-export type CharlestonCourtesyMsg = BaseMsg & {
-  type: 'charleston_courtesy';
-  tableId: string;
-  tiles: string[]; // 0-3 tiles to offer
-  targetPlayer: number; // PlayerId to trade with
-};
 
 export type ClientToServer =
   | AuthMsg
@@ -132,7 +126,7 @@ export type ClientToServer =
   | CharlestonSelectMsg
   | CharlestonReadyMsg
   | CharlestonVoteMsg
-  | CharlestonCourtesyMsg;
+  ;
 
 // Server -> Client
 export type GameStateDelta = Partial<GameState> & { logsAppend?: GameState['logs'] };
@@ -278,7 +272,6 @@ export type CharlestonPhase =
   | 'pass-left-2'     // Pass 4 (Round 2)
   | 'pass-across-2'   // Pass 5 (Round 2)
   | 'pass-right-2'    // Pass 6 (blind pass option)
-  | 'courtesy'        // Courtesy pass
   | 'complete';       // Charleston finished
 
 export type CharlestonPlayerState = {
@@ -287,13 +280,9 @@ export type CharlestonPlayerState = {
   ready: boolean;
   blindPass?: {
     enabled: boolean;
-    count: 1 | 2 | 3;
+    count: 0 | 1 | 2;
   };
   vote?: 'yes' | 'no';
-  courtesyOffer?: {
-    tiles: string[];
-    targetPlayer: number;
-  };
 };
 
 // Charleston state update message

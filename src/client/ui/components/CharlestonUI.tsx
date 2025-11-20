@@ -10,10 +10,9 @@ interface CharlestonUIProps {
   canBlindPass: boolean;
   passNumber: number;
   allPlayers: { playerId: number; username: string }[];
-  onSelectTiles: (tiles: string[], blindPass?: { enabled: boolean; count: 1 | 2 | 3 }) => void;
+  onSelectTiles: (tiles: string[], blindPass?: { enabled: boolean; count: 0 | 1 | 2 }) => void;
   onReady: () => void;
   onVote: (vote: 'yes' | 'no') => void;
-  onCourtesyOffer: (tiles: string[], targetPlayer: number) => void;
   onReorderHand?: (newOrder: string[]) => void; // Callback when tiles are reordered
 }
 
@@ -29,22 +28,19 @@ export default function CharlestonUI({
   onSelectTiles,
   onReady,
   onVote,
-  onCourtesyOffer,
   onReorderHand
 }: CharlestonUIProps) {
   const [selectedTiles, setSelectedTiles] = useState<string[]>([]);
   const [blindPassEnabled, setBlindPassEnabled] = useState(false);
-  const [blindPassCount, setBlindPassCount] = useState<1 | 2 | 3>(1);
+  const [blindPassCount, setBlindPassCount] = useState<0 | 1 | 2>(1);
   const [currentVote, setCurrentVote] = useState<'yes' | 'no' | null>(null);
-  const [courtesyTarget, setCourtesyTarget] = useState<number | null>(null);
   const [showPassAnimation, setShowPassAnimation] = useState(false);
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
 
   const yourState = playerStates.find(ps => ps.playerId === yourPlayerId) || playerStates[yourPlayerId];
   const isVotePhase = phase === 'vote';
-  const isCourtesyPhase = phase === 'courtesy';
-  const isPassPhase = !isVotePhase && !isCourtesyPhase && phase !== 'complete';
+  const isPassPhase = !isVotePhase && phase !== 'complete';
   
   // Safety check
   if (!yourState) {
@@ -53,10 +49,9 @@ export default function CharlestonUI({
   }
 
   const maxSelectableTiles = useMemo(() => {
-    if (isCourtesyPhase) return 3;
-    if (blindPassEnabled) return 3 - blindPassCount;
+    if (blindPassEnabled) return blindPassCount; // Select X tiles, keep X from incoming
     return 3;
-  }, [isCourtesyPhase, blindPassEnabled, blindPassCount]);
+  }, [blindPassEnabled, blindPassCount]);
 
   const handleTileClick = (tile: string, index: number) => {
     if (tile === 'J') return;
@@ -100,12 +95,7 @@ export default function CharlestonUI({
     }
   }, [currentVote, isVotePhase]);
 
-  useEffect(() => {
-    if (isCourtesyPhase && courtesyTarget !== null) {
-      const tiles = selectedTiles.map(t => t.split('_')[0]);
-      onCourtesyOffer(tiles, courtesyTarget);
-    }
-  }, [selectedTiles, courtesyTarget, isCourtesyPhase]);
+  // Courtesy pass removed
 
   const handleReady = () => {
     if (!yourState.ready) {
@@ -116,22 +106,20 @@ export default function CharlestonUI({
   const canReady = useMemo(() => {
     if (yourState.ready) return false;
     if (isVotePhase) return currentVote !== null;
-    if (isCourtesyPhase) return courtesyTarget !== null || selectedTiles.length === 0;
     if (isPassPhase) {
       if (blindPassEnabled) {
-        return selectedTiles.length === (3 - blindPassCount);
+        return selectedTiles.length === blindPassCount;
       }
       return selectedTiles.length === 3;
     }
     return false;
-  }, [yourState.ready, isVotePhase, isCourtesyPhase, isPassPhase, currentVote, selectedTiles, blindPassEnabled, blindPassCount, courtesyTarget]);
+  }, [yourState.ready, isVotePhase, isPassPhase, currentVote, selectedTiles, blindPassEnabled, blindPassCount]);
 
   useEffect(() => {
     setSelectedTiles([]);
     setBlindPassEnabled(false);
     setBlindPassCount(1);
     setCurrentVote(null);
-    setCourtesyTarget(null);
     // Hide animation when phase changes (pass completed)
     setShowPassAnimation(false);
   }, [phase]);
@@ -188,33 +176,7 @@ export default function CharlestonUI({
         </div>
       )}
 
-      {isCourtesyPhase && (
-        <div className="courtesy-section">
-          <h3>Select a player to trade with (0-3 tiles):</h3>
-          <div className="target-selection">
-            <button
-              className={`target-option ${courtesyTarget === null ? 'selected' : ''}`}
-              onClick={() => setCourtesyTarget(null)}
-            >
-              No Trade
-            </button>
-            {allPlayers
-              .filter(p => p.playerId !== yourPlayerId)
-              .map(player => (
-                <button
-                  key={player.playerId}
-                  className={`target-option ${courtesyTarget === player.playerId ? 'selected' : ''}`}
-                  onClick={() => setCourtesyTarget(player.playerId)}
-                >
-                  {player.username}
-                  {playerStates[player.playerId].courtesyOffer?.targetPlayer === yourPlayerId && (
-                    <span className="mutual-indicator"> (wants to trade!)</span>
-                  )}
-                </button>
-              ))}
-          </div>
-        </div>
-      )}
+      {/* Courtesy pass removed */}
 
       {canBlindPass && isPassPhase && (
         <div className="blind-pass-section">
@@ -225,9 +187,9 @@ export default function CharlestonUI({
               onChange={(e) => {
                 setBlindPassEnabled(e.target.checked);
                 if (e.target.checked) {
-                  const maxTiles = 3 - blindPassCount;
-                  if (selectedTiles.length > maxTiles) {
-                    setSelectedTiles(selectedTiles.slice(0, maxTiles));
+                  // When enabling blind pass, ensure selected count doesn't exceed current blindPassCount
+                  if (selectedTiles.length > blindPassCount) {
+                    setSelectedTiles(selectedTiles.slice(0, blindPassCount));
                   }
                 }
               }}
@@ -238,29 +200,29 @@ export default function CharlestonUI({
 
           {blindPassEnabled && (
             <div className="blind-pass-slider">
-              <label>Take {blindPassCount} tile{blindPassCount > 1 ? 's' : ''} from incoming pass:</label>
+              <label>Select {blindPassCount} tile{blindPassCount !== 1 ? 's' : ''} from your hand:</label>
               <input
                 type="range"
-                min="1"
-                max="3"
+                min="0"
+                max="2"
                 value={blindPassCount}
                 onChange={(e) => {
-                  const newCount = parseInt(e.target.value) as 1 | 2 | 3;
+                  const newCount = parseInt(e.target.value) as 0 | 1 | 2;
                   setBlindPassCount(newCount);
-                  const maxTiles = 3 - newCount;
-                  if (selectedTiles.length > maxTiles) {
-                    setSelectedTiles(selectedTiles.slice(0, maxTiles));
+                  // Clear selections if we have too many
+                  if (selectedTiles.length > newCount) {
+                    setSelectedTiles(selectedTiles.slice(0, newCount));
                   }
                 }}
                 disabled={yourState.ready}
               />
               <div className="slider-labels">
+                <span>0</span>
                 <span>1</span>
                 <span>2</span>
-                <span>3</span>
               </div>
               <p className="blind-pass-info">
-                You must select {3 - blindPassCount} tile{3 - blindPassCount !== 1 ? 's' : ''} from your hand
+                Keep {blindPassCount} random tile{blindPassCount !== 1 ? 's' : ''} from incoming, forward {3 - blindPassCount}
               </p>
             </div>
           )}
@@ -268,7 +230,7 @@ export default function CharlestonUI({
       )}
 
       <div className="hand-section">
-        <h3>Your Hand - {isCourtesyPhase ? 'Select 0-3 tiles:' : `Select ${maxSelectableTiles} tile${maxSelectableTiles !== 1 ? 's' : ''}:`}</h3>
+        <h3>Your Hand - {`Select ${maxSelectableTiles} tile${maxSelectableTiles !== 1 ? 's' : ''}:`}</h3>
         <div className="charleston-hand">
           {yourHand.map((tile, idx) => {
             const tileWithIndex = `${tile}_${idx}`;
@@ -385,9 +347,8 @@ export default function CharlestonUI({
         {!canReady && !yourState.ready && (
           <p className="ready-hint">
             {isVotePhase && 'Select your vote'}
-            {isCourtesyPhase && 'Select a player to trade with (or No Trade)'}
             {isPassPhase && !blindPassEnabled && 'Select 3 tiles'}
-            {isPassPhase && blindPassEnabled && `Select ${3 - blindPassCount} tile${3 - blindPassCount !== 1 ? 's' : ''}`}
+            {isPassPhase && blindPassEnabled && `Select ${blindPassCount} tile${blindPassCount !== 1 ? 's' : ''}`}
           </p>
         )}
       </div>
